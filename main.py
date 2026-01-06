@@ -26,6 +26,7 @@ p1 = Let(
 )
 
 # Flip a coin, choose between two different Gaussians, observe the result twice
+# We should see that the probability of b is the same as above
 p2 = Let(
     "b",
     Flip(0.5),
@@ -42,6 +43,7 @@ p2 = Let(
 
 # Observe a Gaussian, then flip a coin, then choose between existing or new Gaussian
 # then observe the *same* value again
+# We should see that the probability of b is 1.0
 p3 = Let(
     "x",
     Gaussian(0, 1),
@@ -53,7 +55,7 @@ p3 = Let(
             Flip(0.5),
             Let(
                 "y",
-                IfThenElse(Var("b"), Var("x"), Gaussian(0, 2)),
+                IfThenElse(Var("b"), Var("x"), Gaussian(0, 1)),
                 Let("_", ObserveReal(0.5, Var("y")), Var("b")),
             ),
         ),
