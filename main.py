@@ -8,7 +8,7 @@ from kc.prob import (
     GaussianVariable,
 )
 
-
+# Flip a coin, choose between two different Gaussians, observe the result
 expr = Let(
     "x",
     Var("x"),
@@ -18,6 +18,13 @@ expr = Let(
         Const(False),
     ),
 )
+
+# Flip a coin, choose between two different Gaussians, observe the result twice
+
+# Observe a Gaussian, then flip a coin, then choose between existing or new Gaussian
+# then observe the *same* value again
+
+
 
 def main():
     print("Hello from mixed-kc!")
