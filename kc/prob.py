@@ -1,4 +1,6 @@
+from functools import reduce
 import math
+import operator
 import random
 from abc import ABC
 from dataclasses import dataclass
@@ -45,6 +47,12 @@ class GaussianVariable(RealValue):
 class GaussianUnion(RealValue):
     formulae: list[any]
     values: list[GaussianVariable]
+
+
+def gaussian_density(mean, std, val):
+    return (1 / (math.sqrt(2 * math.pi) * std)) * math.exp(
+        -0.5 * ((val - mean) / std) ** 2
+    )
 
 
 def merge_real_values(cond, t, f):
@@ -292,7 +300,7 @@ class ObserveReal(PExpr):
     val: float
     symbolic_value: PExpr
 
-    def kc(self, env, state):
+    def kc(self, env, state: KCState):
         # Modify the self.observes_all_hold formula in some way...
         # We want something like score(density(symbolic_value, val)),
         #  where this density depends on which GaussianVariable symbolic_value
@@ -302,24 +310,38 @@ class ObserveReal(PExpr):
             state.bdd.declare(score_node_name)
             score_node = state.bdd.var(score_node_name)
             mean, std = state.gaussian_params[symbolic_value.var]
-            # Compute the density of self.val under N(mean, std)
-            density = (1 / (math.sqrt(2 * math.pi) * std)) * math.exp(
-                -0.5 * ((self.val - mean) / std) ** 2
-            )
+            density = gaussian_density(mean, std, self.val)
             state.set_weight(score_node_name, density, 1.0)
             state.observes_all_hold = state.observes_all_hold & score_node
             return
 
         # Otherwise, we have a union
-        #    Create a score node for each possibility in the union.
+        #   Create a score node for each possibility in the union.
         #    observes_all_hold will be extended with a big "or", each clause of which
         #    "ands" together:
         #      - the fact that this score node is true
         #      - the formula guarding this value
         #      - the fact that all the other score nodes are false
         #    the weight of each score node will be the corresponding Gaussian density.
-        for f, v in zip(symbolic_value.formulae, symbolic_value.values):
-            pass
+        score_nodes = []
+        for v in symbolic_value.values:
+            #  create a score node for each possibility in the union.
+            score_node_name = f"{v.var}={self.val}"
+            state.bdd.declare(score_node_name)
+            score_nodes.append(state.bdd.var(score_node_name))
+            mean, std = state.gaussian_params[v.var]
+            density = gaussian_density(mean, std, self.val)
+            state.set_weight(score_node_name, density, 1.0)
+
+        for i in range(len(score_nodes)):
+            # this score node is true and all the other score nodes are false
+            clause = score_nodes[i] & reduce(
+                operator.and_, [~x for x in score_nodes[:i] + score_nodes[i + 1 :]]
+            )
+            # Add formula guarding this value to the clause
+            clause = clause & symbolic_value.formulae[i]
+            # Add the clause to the observes_all_hold formula
+            state.observes_all_hold = state.observes_all_hold & clause
 
         # Things to think about:
         #   When multiple observes talk about potentially the same GaussianVariable
@@ -329,7 +351,7 @@ class ObserveReal(PExpr):
         #       or where Var("x") is a union
         #     This is related to the question in Pun that we saw of density of [x, 2x] at [3, 6] when x ~ N(0, 1)?
 
-        raise NotImplementedError("Not yet implemented: observe for symbolic union")
+        return state.bdd.true
 
 
 def rejection_sample(expr):
