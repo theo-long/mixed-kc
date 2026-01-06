@@ -333,6 +333,7 @@ class ObserveReal(PExpr):
             density = gaussian_density(mean, std, self.val)
             state.set_weight(score_node_name, density, 1.0)
 
+        clauses = []
         for i in range(len(score_nodes)):
             # this score node is true and all the other score nodes are false
             clause = score_nodes[i] & reduce(
@@ -340,8 +341,11 @@ class ObserveReal(PExpr):
             )
             # Add formula guarding this value to the clause
             clause = clause & symbolic_value.formulae[i]
-            # Add the clause to the observes_all_hold formula
-            state.observes_all_hold = state.observes_all_hold & clause
+            clauses.append(clause)
+
+        # We OR together all the clauses and AND it with observes_all_hold
+        clause = reduce(operator.or_, clauses)
+        state.observes_all_hold = state.observes_all_hold & clause
 
         # Things to think about:
         #   When multiple observes talk about potentially the same GaussianVariable
