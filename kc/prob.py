@@ -1,9 +1,11 @@
+from collections import defaultdict
 from functools import reduce
 import math
 import operator
 import random
 from abc import ABC
 from dataclasses import dataclass
+import itertools as it
 from scipy.stats import norm
 
 import dd.autoref as _bdd
@@ -19,6 +21,24 @@ class KCState:
         self.weights = {}
         self.gaussian_params = {}
         self.observes_all_hold = self.bdd.true
+
+        # We track observes associated with each GaussianVariable
+        # This allows us to check if the observes are mutually compatible
+        self.gaussian_observes = defaultdict(set)
+
+    @property
+    def gaussian_observes_mutually_compatible(self):
+        # This is a big AND over all the mutually incompatible pairs of observes
+        # future cases to handle:
+        # - what if we have two different GaussianVariables that are somehow related?
+        # - what if we have non-equality observes e.g. x < 0.5?
+        clause = self.bdd.true
+        for gaussian_variables in self.gaussian_observes.values():
+            for observe_pair in it.combinations(gaussian_variables, 2):
+                # Currently, we only support gaussian equality observes
+                # therefore any two observes that are not equal are mutually incompatible
+                clause = clause & ~(observe_pair[0] & observe_pair[1])
+        return clause
 
     def next_flip(self):
         self.flips += 1
@@ -308,6 +328,7 @@ class ObserveReal(PExpr):
             score_node_name = f"{symbolic_value.var}={self.val}"
             state.bdd.declare(score_node_name)
             score_node = state.bdd.var(score_node_name)
+            state.gaussian_observes[symbolic_value.var].add(score_node)
             mean, std = state.gaussian_params[symbolic_value.var]
             density = gaussian_density(mean, std, self.val)
             state.set_weight(score_node_name, density, 1.0)
@@ -327,7 +348,9 @@ class ObserveReal(PExpr):
             #  create a score node for each possibility in the union.
             score_node_name = f"{v.var}={self.val}"
             state.bdd.declare(score_node_name)
-            score_nodes.append(state.bdd.var(score_node_name))
+            score_node = state.bdd.var(score_node_name)
+            state.gaussian_observes[v.var].add(score_node)
+            score_nodes.append(score_node)
             mean, std = state.gaussian_params[v.var]
             density = gaussian_density(mean, std, self.val)
             state.set_weight(score_node_name, density, 1.0)
