@@ -62,12 +62,7 @@ p3 = Let(
         ),
     ),
 )
-expected_p3 = (gaussian_density(1.0, 1.0, 1.0) + gaussian_density(0.1, 1.0, 1.0)) / (
-    gaussian_density(1.0, 1.0, 1.0)
-    + gaussian_density(1.0, 2.0, 1.0)
-    + gaussian_density(0.1, 1.0, 1.0)
-    + gaussian_density(0.1, 2.0, 1.0)
-)
+expected_p3 = None
 
 # Observe a Gaussian, then flip a coin, then choose between existing or new Gaussian
 # then observe the *same* value again

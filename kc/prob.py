@@ -1,14 +1,13 @@
-from collections import defaultdict
-from functools import reduce
-import math
+import itertools as it
 import operator
 import random
 from abc import ABC
+from collections import defaultdict
 from dataclasses import dataclass
-import itertools as it
-from scipy.stats import norm
+from functools import reduce
 
 import dd.autoref as _bdd
+from scipy.stats import norm
 
 from kc.model_count import model_count
 
@@ -20,7 +19,7 @@ class KCState:
         self.gaussians = 0
         self.weights = {}
         self.gaussian_params = {}
-        self.observes_all_hold = self.bdd.true
+        self._observes_all_hold = self.bdd.true
 
         # We track observes associated with each GaussianVariable
         # This allows us to check if the observes are mutually compatible
@@ -39,6 +38,10 @@ class KCState:
                 # therefore any two observes that are not equal are mutually incompatible
                 clause = clause & ~(observe_pair[0] & observe_pair[1])
         return clause
+
+    @property
+    def observes_all_hold(self):
+        return self._observes_all_hold & self.gaussian_observes_mutually_compatible
 
     def next_flip(self):
         self.flips += 1
@@ -309,8 +312,8 @@ class Observe(PExpr):
         else:
             return 0.0
 
-    def kc(self, env, state):
-        state.observes_all_hold = state.observes_all_hold & self.cond.kc(env, state)
+    def kc(self, env, state: KCState):
+        state._observes_all_hold = state._observes_all_hold & self.cond.kc(env, state)
         return state.bdd.true
 
 
@@ -332,7 +335,7 @@ class ObserveReal(PExpr):
             mean, std = state.gaussian_params[symbolic_value.var]
             density = gaussian_density(mean, std, self.val)
             state.set_weight(score_node_name, density, 1.0)
-            state.observes_all_hold = state.observes_all_hold & score_node
+            state._observes_all_hold = state._observes_all_hold & score_node
             return
 
         # Otherwise, we have a union
@@ -367,7 +370,7 @@ class ObserveReal(PExpr):
 
         # We OR together all the clauses and AND it with observes_all_hold
         clause = reduce(operator.or_, clauses)
-        state.observes_all_hold = state.observes_all_hold & clause
+        state._observes_all_hold = state._observes_all_hold & clause
 
         # Things to think about:
         #   When multiple observes talk about potentially the same GaussianVariable
@@ -411,4 +414,6 @@ def run_kc(expr):
     normalizing_constant = model_count(
         state.bdd, state.observes_all_hold, state.weights
     )
+    if normalizing_constant == 0:
+        return None, normalizing_constant
     return (unnormalized_count / normalizing_constant, normalizing_constant)
