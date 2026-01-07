@@ -5,6 +5,7 @@ from abc import ABC
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
+from typing import Literal
 
 import dd.autoref as _bdd
 from scipy.stats import norm
@@ -73,8 +74,12 @@ class GaussianUnion(RealValue):
     values: list[GaussianVariable]
 
 
-def gaussian_density(mean, std, val):
+def gaussian_pdf(mean, std, val):
     return norm.pdf(val, loc=mean, scale=std)
+
+
+def gaussian_cdf(mean, std, val):
+    return norm.cdf(val, loc=mean, scale=std)
 
 
 def merge_real_values(cond, t, f):
@@ -317,10 +322,20 @@ class Observe(PExpr):
         return state.bdd.true
 
 
+# Things to think about:
+#   When multiple observes talk about potentially the same GaussianVariable
+#     ObserveReal(3.0, Var("x"))
+#     ObserveReal(6.0, (Mul(2.0, Var("x"))))
+#     where Var("x") refers to a GaussianVariable(i).
+#       or where Var("x") is a union
+#     This is related to the question in Pun that we saw of density of [x, 2x] at [3, 6] when x ~ N(0, 1)?
+# How to handle the non-independence of ObserveRealInequality?
+
+
 @dataclass
 class ObserveReal(PExpr):
-    val: float
     symbolic_value: PExpr
+    val: float
 
     def kc(self, env, state: KCState):
         # Modify the self.observes_all_hold formula in some way...
@@ -333,7 +348,7 @@ class ObserveReal(PExpr):
             score_node = state.bdd.var(score_node_name)
             state.gaussian_observes[symbolic_value.var].add(score_node)
             mean, std = state.gaussian_params[symbolic_value.var]
-            density = gaussian_density(mean, std, self.val)
+            density = gaussian_pdf(mean, std, self.val)
             state.set_weight(score_node_name, density, 1.0)
             state._observes_all_hold = state._observes_all_hold & score_node
             return
@@ -355,7 +370,7 @@ class ObserveReal(PExpr):
             state.gaussian_observes[v.var].add(score_node)
             score_nodes.append(score_node)
             mean, std = state.gaussian_params[v.var]
-            density = gaussian_density(mean, std, self.val)
+            density = gaussian_pdf(mean, std, self.val)
             state.set_weight(score_node_name, density, 1.0)
 
         clauses = []
@@ -372,13 +387,68 @@ class ObserveReal(PExpr):
         clause = reduce(operator.or_, clauses)
         state._observes_all_hold = state._observes_all_hold & clause
 
-        # Things to think about:
-        #   When multiple observes talk about potentially the same GaussianVariable
-        #     ObserveReal(3.0, Var("x"))
-        #     ObserveReal(6.0, (Mul(2.0, Var("x"))))
-        #     where Var("x") refers to a GaussianVariable(i).
-        #       or where Var("x") is a union
-        #     This is related to the question in Pun that we saw of density of [x, 2x] at [3, 6] when x ~ N(0, 1)?
+        return state.bdd.true
+
+
+@dataclass
+class ObserveRealInequality(PExpr):
+    symbolic_value: PExpr
+    inequality: Literal["<", ">"]
+    val: float
+
+    def kc(self, env, state: KCState):
+        # Modify the self.observes_all_hold formula in some way...
+        # We want something like score(density(symbolic_value, val)),
+        #  where this density depends on which GaussianVariable symbolic_value
+        symbolic_value = self.symbolic_value.kc(env, state)
+        if isinstance(symbolic_value, GaussianVariable):
+            score_node_name = f"{symbolic_value.var}{self.inequality}{self.val}"
+            state.bdd.declare(score_node_name)
+            score_node = state.bdd.var(score_node_name)
+            state.gaussian_observes[symbolic_value.var].add(score_node)
+            mean, std = state.gaussian_params[symbolic_value.var]
+            density = gaussian_cdf(mean, std, self.val)
+            if self.inequality == "<":
+                density = 1.0 - density
+            state.set_weight(score_node_name, density, 1.0 - density)
+            state._observes_all_hold = state._observes_all_hold & score_node
+            return
+
+        # Otherwise, we have a union
+        #   Create a score node for each possibility in the union.
+        #    observes_all_hold will be extended with a big "or", each clause of which
+        #    "ands" together:
+        #      - the fact that this score node is true
+        #      - the formula guarding this value
+        #      - the fact that all the other score nodes are false
+        #    the weight of each score node will be the corresponding Gaussian density.
+        score_nodes = []
+        for v in symbolic_value.values:
+            #  create a score node for each possibility in the union.
+            score_node_name = f"{v.var}{self.inequality}{self.val}"
+            state.bdd.declare(score_node_name)
+            score_node = state.bdd.var(score_node_name)
+            state.gaussian_observes[v.var].add(score_node)
+            score_nodes.append(score_node)
+            mean, std = state.gaussian_params[v.var]
+            density = gaussian_cdf(mean, std, self.val)
+            if self.inequality == "<":
+                density = 1.0 - density
+            state.set_weight(score_node_name, density, 1.0 - density)
+
+        clauses = []
+        for i in range(len(score_nodes)):
+            # this score node is true and all the other score nodes are false
+            clause = score_nodes[i] & reduce(
+                operator.and_, [~x for x in score_nodes[:i] + score_nodes[i + 1 :]]
+            )
+            # Add formula guarding this value to the clause
+            clause = clause & symbolic_value.formulae[i]
+            clauses.append(clause)
+
+        # We OR together all the clauses and AND it with observes_all_hold
+        clause = reduce(operator.or_, clauses)
+        state._observes_all_hold = state._observes_all_hold & clause
 
         return state.bdd.true
 
