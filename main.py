@@ -85,6 +85,7 @@ p4 = Let(
 )
 # We should see that the probability of b is 1.0 because once we've observed the value of x as 1.0,
 # we know that also observing the other gaussian having the same value is measure 0.
+# This works because for ObserveReal, for each variable in a GaussianUnion, the clause states that *this* score node is true and all the other score nodes are false.
 expected_p4 = 1.0
 
 
@@ -107,4 +108,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-    from IPython import embed; embed()
+    from IPython import embed
+
+    embed()
