@@ -4,6 +4,7 @@ import operator
 import random
 from abc import ABC
 from dataclasses import dataclass
+from scipy.stats import norm
 
 import dd.autoref as _bdd
 
@@ -50,9 +51,7 @@ class GaussianUnion(RealValue):
 
 
 def gaussian_density(mean, std, val):
-    return (1 / (math.sqrt(2 * math.pi) * std)) * math.exp(
-        -0.5 * ((val - mean) / std) ** 2
-    )
+    return norm.pdf(val, loc=mean, scale=std)
 
 
 def merge_real_values(cond, t, f):
