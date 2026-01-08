@@ -24,7 +24,9 @@ class KCState:
 
         # We track observes associated with each GaussianVariable
         # This allows us to check if the observes are mutually compatible
-        self.gaussian_observes = defaultdict(set)
+        self.gaussian_equality_observes = defaultdict(set)
+        self.gaussian_less_than_observes = defaultdict(set)
+        self.gaussian_greater_than_observes = defaultdict(set)
 
     @property
     def gaussian_observes_mutually_compatible(self):
@@ -33,7 +35,7 @@ class KCState:
         # - what if we have two different GaussianVariables that are somehow related?
         # - what if we have non-equality observes e.g. x < 0.5?
         clause = self.bdd.true
-        for gaussian_variables in self.gaussian_observes.values():
+        for gaussian_variables in self.gaussian_equality_observes.values():
             for observe_pair in it.combinations(gaussian_variables, 2):
                 # Currently, we only support gaussian equality observes
                 # therefore any two observes that are not equal are mutually incompatible
@@ -346,7 +348,7 @@ class ObserveReal(PExpr):
             score_node_name = f"{symbolic_value.var}={self.val}"
             state.bdd.declare(score_node_name)
             score_node = state.bdd.var(score_node_name)
-            state.gaussian_observes[symbolic_value.var].add(score_node)
+            state.gaussian_equality_observes[symbolic_value.var].add(score_node)
             mean, std = state.gaussian_params[symbolic_value.var]
             density = gaussian_pdf(mean, std, self.val)
             state.set_weight(score_node_name, density, 1.0)
@@ -367,7 +369,7 @@ class ObserveReal(PExpr):
             score_node_name = f"{v.var}={self.val}"
             state.bdd.declare(score_node_name)
             score_node = state.bdd.var(score_node_name)
-            state.gaussian_observes[v.var].add(score_node)
+            state.gaussian_equality_observes[v.var].add(score_node)
             score_nodes.append(score_node)
             mean, std = state.gaussian_params[v.var]
             density = gaussian_pdf(mean, std, self.val)
