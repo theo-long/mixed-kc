@@ -407,11 +407,13 @@ class ObserveRealInequality(PExpr):
             score_node_name = f"{symbolic_value.var}{self.inequality}{self.val}"
             state.bdd.declare(score_node_name)
             score_node = state.bdd.var(score_node_name)
-            state.gaussian_observes[symbolic_value.var].add(score_node)
             mean, std = state.gaussian_params[symbolic_value.var]
             density = gaussian_cdf(mean, std, self.val)
-            if self.inequality == "<":
+            if self.inequality == ">":
                 density = 1.0 - density
+                state.gaussian_greater_than_observes[symbolic_value.var].add(score_node)
+            else:
+                state.gaussian_less_than_observes[symbolic_value.var].add(score_node)
             state.set_weight(score_node_name, density, 1.0 - density)
             state._observes_all_hold = state._observes_all_hold & score_node
             return
@@ -430,12 +432,14 @@ class ObserveRealInequality(PExpr):
             score_node_name = f"{v.var}{self.inequality}{self.val}"
             state.bdd.declare(score_node_name)
             score_node = state.bdd.var(score_node_name)
-            state.gaussian_observes[v.var].add(score_node)
             score_nodes.append(score_node)
             mean, std = state.gaussian_params[v.var]
             density = gaussian_cdf(mean, std, self.val)
-            if self.inequality == "<":
+            if self.inequality == ">":
                 density = 1.0 - density
+                state.gaussian_greater_than_observes[v.var].add(score_node)
+            else:
+                state.gaussian_less_than_observes[v.var].add(score_node)
             state.set_weight(score_node_name, density, 1.0 - density)
 
         clauses = []

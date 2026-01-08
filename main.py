@@ -1,12 +1,12 @@
 from kc.prob import (
-    Const,
     Flip,
     Gaussian,
     IfThenElse,
     Let,
-    Observe,
     ObserveReal,
+    ObserveRealInequality,
     Var,
+    gaussian_cdf,
     gaussian_pdf,
     run_kc,
 )
@@ -139,6 +139,29 @@ p6 = Let(
 # Impossible to observe b1 and b2, because the second observe implies that y != x so b2 must be false.
 expected_p6 = 0.0
 
+# Observe that a Gaussian union is > 0. and < 1.0
+p7 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "x",
+        IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
+        Let(
+            "_",
+            ObserveRealInequality(Var("x"), "<", 1.0),  # Observe that x < 1.0
+            Let(
+                "_", ObserveRealInequality(Var("x"), ">", 0.0), Var("b")
+            ),  # Observe that x > 0.0
+        ),
+    ),
+)
+expected_p7 = (gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)) / (
+    gaussian_cdf(0.0, 1.0, 1.0)
+    - gaussian_cdf(0.0, 1.0, 0.0)
+    + gaussian_cdf(0.0, 10.0, 1.0)
+    - gaussian_cdf(0.0, 10.0, 0.0)
+)
+
 
 def main():
     print("Hello from mixed-kc!")
@@ -150,6 +173,7 @@ def main():
         ("p4", p4, expected_p4),
         ("p5", p5, expected_p5),
         ("p6", p6, expected_p6),
+        ("p7", p7, expected_p7),
     ]:
         print(f"--- {name} ---")
         prob, normalizing_constant = run_kc(program)
