@@ -101,17 +101,43 @@ p5 = Let(
             IfThenElse(Var("b1"), Gaussian(0, 1), Gaussian(0, 2)),
             Let(
                 "_",
-                ObserveReal(Var("x"), 0.5),
+                ObserveReal(Var("x"), 1.0),
                 Let(
                     "y",
-                    IfThenElse(Flip(0.5), Var("x"), Gaussian(0, 10)),
-                    Let("_", ObserveReal(Var("y"), 0.5), b1_and_b2),
+                    IfThenElse(Var("b2"), Var("x"), Gaussian(0, 10)),
+                    Let("_", ObserveReal(Var("y"), 1.0), b1_and_b2),
                 ),
             ),
         ),
     ),
 )
-expected_p5 = None
+# Should be the same as p1 because the first observe is same as in p1, and the second observe has the same value as the first observe so it is measure 0.
+expected_p5 = expected_p1
+
+# Same as p5, but now the second observe has a different value than the first observe so it is not measure 0.
+p6 = Let(
+    "b1",
+    Flip(0.5),
+    Let(
+        "b2",
+        Flip(0.5),
+        Let(
+            "x",
+            IfThenElse(Var("b1"), Gaussian(0, 1), Gaussian(0, 2)),
+            Let(
+                "_",
+                ObserveReal(Var("x"), 1.0),
+                Let(
+                    "y",
+                    IfThenElse(Var("b2"), Var("x"), Gaussian(0, 10)),
+                    Let("_", ObserveReal(Var("y"), 2.0), b1_and_b2),
+                ),
+            ),
+        ),
+    ),
+)
+# Impossible to observe b1 and b2, because the second observe implies that y != x so b2 must be false.
+expected_p6 = 0.0
 
 
 def main():
@@ -123,6 +149,7 @@ def main():
         ("p3", p3, expected_p3),
         ("p4", p4, expected_p4),
         ("p5", p5, expected_p5),
+        ("p6", p6, expected_p6),
     ]:
         print(f"--- {name} ---")
         prob, normalizing_constant = run_kc(program)
@@ -130,10 +157,3 @@ def main():
         print(f"Expected probability of b: {expected_prob}")
         print(f"Normalizing constant: {normalizing_constant}")
         print()
-
-
-if __name__ == "__main__":
-    main()
-    from IPython import embed
-
-    embed()
