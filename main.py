@@ -26,8 +26,8 @@ p1 = Let(
     ),
 )
 # Expected probability of b is the ratio of the density of x=1.0 under N(0, 1) to the sum of the densities of x=1.0 under N(0, 1) and N(0, 2)
-expected_p1 = gaussian_pdf(1.0, 1.0, 1.0) / (
-    gaussian_pdf(1.0, 1.0, 1.0) + gaussian_pdf(1.0, 2.0, 1.0)
+expected_p1 = gaussian_pdf(0.0, 1.0, 1.0) / (
+    gaussian_pdf(0.0, 1.0, 1.0) + gaussian_pdf(0.0, 2.0, 1.0)
 )
 
 # Flip a coin, choose between two different Gaussians, observe the result twice
@@ -153,7 +153,19 @@ def main():
     ]:
         print(f"--- {name} ---")
         prob, normalizing_constant = run_kc(program)
-        print(f"Probability of b: {prob}")
-        print(f"Expected probability of b: {expected_prob}")
-        print(f"Normalizing constant: {normalizing_constant}")
+        print(
+            f"Probability of b: {prob: .3%}"
+            if prob is not None
+            else "Probability of b: None"
+        )
+        print(
+            f"Expected probability of b: {expected_prob: .3%}"
+            if expected_prob is not None
+            else "Expected probability of b: None"
+        )
+        print(f"Normalizing constant: {normalizing_constant: .6f}")
         print()
+
+
+if __name__ == "__main__":
+    main()
