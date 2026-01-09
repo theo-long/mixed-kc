@@ -4,12 +4,20 @@ from abc import ABC
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import dd.autoref as _bdd
 from scipy.stats import norm
 
 from kc.model_count import model_count
+
+
+class Interpretable(Protocol):
+    def kc(self, env: dict[str, Any], state: "KCState") -> Any: ...
+
+    def sample(self, env: dict[str, Any]) -> Any: ...
+
+    def pmf(self, env: dict[str, Any], v: Any) -> float: ...
 
 
 class KCState:
@@ -46,7 +54,8 @@ class KCState:
     def _get_le_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
     ):
-        interval_clause = self.bdd.false
+        interval_allowed_clause = self.bdd.false
+        interval_disallowed_clause = self.bdd.true
         equality_clause = self.bdd.true
         for i in range(len(thresholds) - 1):
             low, high = thresholds[i], thresholds[i + 1]
@@ -59,16 +68,23 @@ class KCState:
 
             # Can observe interval for intervals less than or equal to val
             if high <= val:
-                interval_clause = interval_clause | self.bdd.var(
+                interval_allowed_clause = interval_allowed_clause | self.bdd.var(
                     self._get_interval_node_name(gv.var, low, high)
                 )
 
-        return interval_clause & equality_clause
+            # Cannot observe interval for intervals greater than val
+            if low >= val:
+                interval_disallowed_clause = interval_disallowed_clause & ~self.bdd.var(
+                    self._get_interval_node_name(gv.var, low, high)
+                )
+
+        return interval_allowed_clause & interval_disallowed_clause & equality_clause
 
     def _get_ge_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
     ):
-        interval_clause = self.bdd.false
+        interval_allowed_clause = self.bdd.false
+        interval_disallowed_clause = self.bdd.true
         equality_clause = self.bdd.true
         for i in range(len(thresholds) - 1):
             low, high = thresholds[i], thresholds[i + 1]
@@ -81,11 +97,16 @@ class KCState:
 
             # Can observe interval for intervals greater than or equal to val
             if low >= val:
-                interval_clause = interval_clause | self.bdd.var(
+                interval_allowed_clause = interval_allowed_clause | self.bdd.var(
                     self._get_interval_node_name(gv.var, low, high)
                 )
 
-        return interval_clause & equality_clause
+            if high <= val:
+                interval_disallowed_clause = interval_disallowed_clause & ~self.bdd.var(
+                    self._get_interval_node_name(gv.var, low, high)
+                )
+
+        return interval_allowed_clause & interval_disallowed_clause & equality_clause
 
     def _get_gaussian_variable_observe_clause(
         self,
@@ -342,7 +363,7 @@ def merge_real_values(cond, t, f):
     return GaussianUnion(formulae=all_formulae, values=all_values)
 
 
-class PExpr(ABC):
+class PExpr(ABC, Interpretable):
     pass
 
 
@@ -379,6 +400,12 @@ class Gaussian(AExpr):
         var = state.next_gaussian()
         state.set_gaussian_params(var, self.mean, self.std)
         return GaussianVariable(var)
+
+    def sample(self, env):
+        return random.gauss(self.mean, self.std)
+
+    def pmf(self, env, v):
+        raise NotImplementedError("PMF for Gaussian is not implemented.")
 
 
 @dataclass
@@ -540,52 +567,11 @@ class ObserveReal(PExpr):
         )
         return state.bdd.true
 
-        if isinstance(symbolic_value, GaussianVariable):
-            score_node_name = f"{symbolic_value.var}={self.val}"
-            state.bdd.declare(score_node_name)
-            score_node = state.bdd.var(score_node_name)
-            state.gaussian_equality_observes[symbolic_value.var].add(score_node)
-            mean, std = state.gaussian_params[symbolic_value.var]
-            density = gaussian_pdf(mean, std, self.val)
-            state.set_weight(score_node_name, density, 1.0)
-            state._observes_all_hold = state._observes_all_hold & score_node
-            return
+    def sample(self, env):
+        raise NotImplementedError("Sampling with ObserveReal is not implemented.")
 
-        # Otherwise, we have a union
-        #   Create a score node for each possibility in the union.
-        #    observes_all_hold will be extended with a big "or", each clause of which
-        #    "ands" together:
-        #      - the fact that this score node is true
-        #      - the formula guarding this value
-        #      - the fact that all the other score nodes are false
-        #    the weight of each score node will be the corresponding Gaussian density.
-        score_nodes = []
-        for v in symbolic_value.values:
-            #  create a score node for each possibility in the union.
-            score_node_name = f"{v.var}={self.val}"
-            state.bdd.declare(score_node_name)
-            score_node = state.bdd.var(score_node_name)
-            state.gaussian_equality_observes[v.var].add(score_node)
-            score_nodes.append(score_node)
-            mean, std = state.gaussian_params[v.var]
-            density = gaussian_pdf(mean, std, self.val)
-            state.set_weight(score_node_name, density, 1.0)
-
-        clauses = []
-        for i in range(len(score_nodes)):
-            # this score node is true and all the other score nodes are false
-            clause = score_nodes[i] & reduce(
-                operator.and_, [~x for x in score_nodes[:i] + score_nodes[i + 1 :]]
-            )
-            # Add formula guarding this value to the clause
-            clause = clause & symbolic_value.formulae[i]
-            clauses.append(clause)
-
-        # We OR together all the clauses and AND it with observes_all_hold
-        clause = reduce(operator.or_, clauses)
-        state._observes_all_hold = state._observes_all_hold & clause
-
-        return state.bdd.true
+    def pmf(self, env, v):
+        raise NotImplementedError("PMF with ObserveReal is not implemented.")
 
 
 def rejection_sample(expr):

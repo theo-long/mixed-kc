@@ -139,16 +139,18 @@ p6 = Let(
 expected_p6 = 0.0
 
 # Observe that a Gaussian variable is between two values
+# (Note that the expression has to evaluate to a boolean, we use Flip(0.5) as a dummy boolean)
 p7 = Let(
     "x",
     Gaussian(0, 1),
     Let(
         "_",
         ObserveReal(Var("x"), "<", 1.0),
-        Let("_", ObserveReal(Var("x"), ">", 0.0), Var("x")),
+        Let("_", ObserveReal(Var("x"), ">", 0.0), Flip(0.5)),
     ),
 )
-expected_p7 = gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)
+expected_p7 = 0.5
+expected_Z_p7 = gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)
 
 # Observe that a Gaussian union is > 0. and < 1.0
 p8 = Let(
@@ -197,6 +199,8 @@ def main():
             if expected_prob is not None
             else "Expected probability of b: None"
         )
+        if name == "p7":
+            print(f"Expected normalizing constant: {expected_Z_p7: .6f}")
         print(f"Normalizing constant: {normalizing_constant: .6f}")
         print()
 
