@@ -1,3 +1,4 @@
+from itertools import count
 from kc.prob import (
     Flip,
     Gaussian,
@@ -176,7 +177,8 @@ expected_p8 = (gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)) / (
 
 def main():
     print("Hello from mixed-kc!")
-
+    errors = 0
+    count = 0
     for name, program, expected_prob in [
         ("p1", p1, expected_p1),
         ("p2", p2, expected_p2),
@@ -187,8 +189,12 @@ def main():
         ("p7", p7, expected_p7),
         ("p8", p8, expected_p8),
     ]:
+        count += 1
         print(f"--- {name} ---")
         prob, normalizing_constant = run_kc(program)
+        if prob != expected_prob:
+            print("### ERROR ###")
+            errors += 1
         print(
             f"Probability of b: {prob: .3%}"
             if prob is not None
@@ -203,6 +209,8 @@ def main():
             print(f"Expected normalizing constant: {expected_Z_p7: .6f}")
         print(f"Normalizing constant: {normalizing_constant: .6f}")
         print()
+
+    print(f"{count - errors} / {count} tests passed.")
 
 
 if __name__ == "__main__":
