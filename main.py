@@ -204,7 +204,7 @@ p10 = Let(
         Let(
             "_",
             ObserveReal(Var("x"), "=", 1.0),
-            Let("_", ObserveReal(Var("x"), ">", 0.0), Var("b")),
+            Let("_", ObserveReal(Var("x"), ">", 0.42), Var("b")),
         ),
     ),
 )

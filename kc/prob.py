@@ -28,21 +28,20 @@ class KCState:
     def _get_eq_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
     ):
-        clause = self.bdd.true
+        equality_clause = self.bdd.true
         for i in range(len(thresholds) - 1):
             low, high = thresholds[i], thresholds[i + 1]
-            if high < val:
-                clause = clause & ~self.bdd.var(self._get_eq_node_name(gv.var, high))
-            elif low > val:
-                clause = clause & ~self.bdd.var(self._get_eq_node_name(gv.var, low))
+            if low == val:
+                equality_clause = equality_clause & self.bdd.var(
+                    self._get_eq_node_name(gv.var, low)
+                )
+            elif low != float("-inf"):
+                equality_clause = equality_clause & ~self.bdd.var(
+                    self._get_eq_node_name(gv.var, low)
+                )
+        return equality_clause
 
-            if high == val:
-                clause = clause & self.bdd.var(self._get_eq_node_name(gv.var, high))
-            elif high != float("inf"):
-                clause = clause & ~self.bdd.var(self._get_eq_node_name(gv.var, high))
-        return clause
-
-    def _get_le_conjuction(
+    def _get_lt_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
     ):
         interval_allowed_clause = self.bdd.false
@@ -52,7 +51,7 @@ class KCState:
             low, high = thresholds[i], thresholds[i + 1]
 
             # Cannot observe equality for values greater than val
-            if (high > val) and (high != float("inf")):
+            if (high >= val) and (high != float("inf")):
                 equality_clause = equality_clause & ~self.bdd.var(
                     self._get_eq_node_name(gv.var, high)
                 )
@@ -71,7 +70,7 @@ class KCState:
 
         return interval_allowed_clause & interval_disallowed_clause & equality_clause
 
-    def _get_ge_conjuction(
+    def _get_gt_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
     ):
         interval_allowed_clause = self.bdd.false
@@ -81,7 +80,7 @@ class KCState:
             low, high = thresholds[i], thresholds[i + 1]
 
             # Cannot observe equality for values less than val
-            if (low < val) and (low != float("-inf")):
+            if (low <= val) and (low != float("-inf")):
                 equality_clause = equality_clause & ~self.bdd.var(
                     self._get_eq_node_name(gv.var, low)
                 )
@@ -109,9 +108,9 @@ class KCState:
         if inequality == "=":
             return self._get_eq_conjuction(symbolic_value, thresholds, val)
         elif inequality == "<":
-            return self._get_le_conjuction(symbolic_value, thresholds, val)
+            return self._get_lt_conjuction(symbolic_value, thresholds, val)
         elif inequality == ">":
-            return self._get_ge_conjuction(symbolic_value, thresholds, val)
+            return self._get_gt_conjuction(symbolic_value, thresholds, val)
         else:
             raise ValueError(f"Unexpected inequality: {inequality}")
 
