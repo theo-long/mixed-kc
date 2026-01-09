@@ -46,13 +46,19 @@ class KCState:
     ):
         interval_allowed_clause = self.bdd.false
         interval_disallowed_clause = self.bdd.true
-        equality_clause = self.bdd.true
+        equality_disallowed_clause = self.bdd.true
+        equality_allowed_clause = self.bdd.false
         for i in range(len(thresholds) - 1):
             low, high = thresholds[i], thresholds[i + 1]
 
             # Cannot observe equality for values greater than val
             if (high >= val) and (high != float("inf")):
-                equality_clause = equality_clause & ~self.bdd.var(
+                equality_disallowed_clause = equality_disallowed_clause & ~self.bdd.var(
+                    self._get_eq_node_name(gv.var, high)
+                )
+
+            if high < val:
+                equality_allowed_clause = equality_allowed_clause | self.bdd.var(
                     self._get_eq_node_name(gv.var, high)
                 )
 
@@ -68,20 +74,30 @@ class KCState:
                     self._get_interval_node_name(gv.var, low, high)
                 )
 
-        return interval_allowed_clause & interval_disallowed_clause & equality_clause
+        # XOR between interval and equality clauses
+        allowed_clause = (interval_allowed_clause & ~equality_allowed_clause) | (
+            ~interval_allowed_clause & equality_allowed_clause
+        )
+        return allowed_clause & interval_disallowed_clause & equality_disallowed_clause
 
     def _get_gt_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
     ):
         interval_allowed_clause = self.bdd.false
         interval_disallowed_clause = self.bdd.true
-        equality_clause = self.bdd.true
+        equality_disallowed_clause = self.bdd.true
+        equality_allowed_clause = self.bdd.false
         for i in range(len(thresholds) - 1):
             low, high = thresholds[i], thresholds[i + 1]
 
             # Cannot observe equality for values less than val
             if (low <= val) and (low != float("-inf")):
-                equality_clause = equality_clause & ~self.bdd.var(
+                equality_disallowed_clause = equality_disallowed_clause & ~self.bdd.var(
+                    self._get_eq_node_name(gv.var, low)
+                )
+
+            if low > val:
+                equality_allowed_clause = equality_allowed_clause | self.bdd.var(
                     self._get_eq_node_name(gv.var, low)
                 )
 
@@ -96,7 +112,12 @@ class KCState:
                     self._get_interval_node_name(gv.var, low, high)
                 )
 
-        return interval_allowed_clause & interval_disallowed_clause & equality_clause
+        # XOR between interval and equality clauses
+        allowed_clause = (interval_allowed_clause & ~equality_allowed_clause) | (
+            ~interval_allowed_clause & equality_allowed_clause
+        )
+
+        return allowed_clause & interval_disallowed_clause & equality_disallowed_clause
 
     def _get_gaussian_variable_observe_clause(
         self,
