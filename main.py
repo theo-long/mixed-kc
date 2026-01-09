@@ -138,8 +138,20 @@ p6 = Let(
 # Impossible to observe b1 and b2, because the second observe implies that y != x so b2 must be false.
 expected_p6 = 0.0
 
-# Observe that a Gaussian union is > 0. and < 1.0
+# Observe that a Gaussian variable is between two values
 p7 = Let(
+    "x",
+    Gaussian(0, 1),
+    Let(
+        "_",
+        ObserveReal(Var("x"), "<", 1.0),
+        Let("_", ObserveReal(Var("x"), ">", 0.0), Var("x")),
+    ),
+)
+expected_p7 = gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)
+
+# Observe that a Gaussian union is > 0. and < 1.0
+p8 = Let(
     "b",
     Flip(0.5),
     Let(
@@ -152,7 +164,7 @@ p7 = Let(
         ),
     ),
 )
-expected_p7 = (gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)) / (
+expected_p8 = (gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)) / (
     gaussian_cdf(0.0, 1.0, 1.0)
     - gaussian_cdf(0.0, 1.0, 0.0)
     + gaussian_cdf(0.0, 10.0, 1.0)
@@ -171,6 +183,7 @@ def main():
         ("p5", p5, expected_p5),
         ("p6", p6, expected_p6),
         ("p7", p7, expected_p7),
+        ("p8", p8, expected_p8),
     ]:
         print(f"--- {name} ---")
         prob, normalizing_constant = run_kc(program)
