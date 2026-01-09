@@ -159,7 +159,13 @@ class KCState:
                 # This is to ensure that the density is only counted once
                 clause = clause & reduce(
                     operator.and_,
-                    [~x for x in unguarded_clauses[:i] + unguarded_clauses[i + 1 :]],
+                    [
+                        ~self.bdd.var(
+                            self._get_eq_node_name(symbolic_value.values[j].var, val)
+                        )
+                        for j in range(len(symbolic_value.values))
+                        if j != i
+                    ],
                 )
             # Add formula guarding this value to the clause
             clause = clause & symbolic_value.formulae[i]
