@@ -1,23 +1,14 @@
 import operator
-import random
-from abc import ABC
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 import dd.autoref as _bdd
 from scipy.stats import norm
 
 from kc.model_count import model_count
-
-
-class Interpretable(Protocol):
-    def kc(self, env: dict[str, Any], state: "KCState") -> Any: ...
-
-    def sample(self, env: dict[str, Any]) -> Any: ...
-
-    def pmf(self, env: dict[str, Any], v: Any) -> float: ...
 
 
 class KCState:
@@ -363,8 +354,10 @@ def merge_real_values(cond, t, f):
     return GaussianUnion(formulae=all_formulae, values=all_values)
 
 
-class PExpr(ABC, Interpretable):
-    pass
+class PExpr(ABC):
+    @abstractmethod
+    def kc(self, env: dict[str, Any], state: "KCState") -> Any:
+        raise NotImplementedError()
 
 
 class AExpr(PExpr):
@@ -374,15 +367,6 @@ class AExpr(PExpr):
 @dataclass
 class Const(AExpr):
     val: bool
-
-    def sample(self, env):
-        return self.val
-
-    def pmf(self, env, v):
-        if self.val == v:
-            return 1.0
-        else:
-            return 0.0
 
     def kc(self, env, state):
         if self.val:
@@ -401,25 +385,10 @@ class Gaussian(AExpr):
         state.set_gaussian_params(var, self.mean, self.std)
         return GaussianVariable(var)
 
-    def sample(self, env):
-        return random.gauss(self.mean, self.std)
-
-    def pmf(self, env, v):
-        raise NotImplementedError("PMF for Gaussian is not implemented.")
-
 
 @dataclass
 class Var(AExpr):
     var: str
-
-    def sample(self, env):
-        return env[self.var]
-
-    def pmf(self, env, v):
-        if env[self.var] == v:
-            return 1.0
-        else:
-            return 0.0
 
     def kc(self, env, state):
         return env[self.var]
@@ -428,15 +397,6 @@ class Var(AExpr):
 @dataclass
 class Flip(PExpr):
     prob: float
-
-    def sample(self, env):
-        return random.random() < self.prob
-
-    def pmf(self, env, v):
-        if v:
-            return self.prob
-        else:
-            return 1 - self.prob
 
     def kc(self, env, state):
         flip_id = state.next_flip()
@@ -450,26 +410,6 @@ class IfThenElse(PExpr):
     cond: AExpr
     then_expr: PExpr
     else_expr: PExpr
-
-    def sample(self, env):
-        if self.cond.sample(env):
-            return self.then_expr.sample(env)
-        else:
-            return self.else_expr.sample(env)
-
-    def pmf(self, env, v):
-        # Because `cond` is an `AExpr`, we know that it
-        # is either deterministically true or deterministically false.
-        if self.cond.sample(env):
-            return self.then_expr.pmf(env, v)
-        else:
-            return self.else_expr.pmf(env, v)
-
-        # prob_true = self.cond.pmf(env, True)
-        # prob_false = self.cond.pmf(env, False)
-        # return prob_true * self.then_expr.pmf(env, v) + prob_false * self.else_expr.pmf(
-        #     env, v
-        # )
 
     def kc(self, env, state):
         condition_bdd = self.cond.kc(env, state)
@@ -494,23 +434,6 @@ class Let(PExpr):
     binding: PExpr
     body: PExpr
 
-    def sample(self, env):
-        new_env = extend_env(env, {self.var: self.binding.sample(env)})
-        return self.body.sample(new_env)
-
-    def pmf(self, env, v):
-        prob_that_var_is_true = self.binding.pmf(env, True)
-        prob_that_var_is_false = self.binding.pmf(env, False)
-        # without `observe`, could do: 1 - prob_that_var_is_true
-
-        answer_with_var_true = self.body.pmf(extend_env(env, {self.var: True}), v)
-        answer_with_var_false = self.body.pmf(extend_env(env, {self.var: False}), v)
-
-        return (
-            prob_that_var_is_true * answer_with_var_true
-            + prob_that_var_is_false * answer_with_var_false
-        )
-
     def kc(self, env, state):
         new_env = extend_env(env, {self.var: self.binding.kc(env, state)})
         return self.body.kc(new_env, state)
@@ -523,18 +446,6 @@ class Rejection(Exception):
 @dataclass
 class Observe(PExpr):
     cond: PExpr
-
-    def sample(self, env):
-        if self.cond.sample(env):
-            return True
-        else:
-            raise Rejection()
-
-    def pmf(self, env, v):
-        if v:
-            return self.cond.pmf(env, True)
-        else:
-            return 0.0
 
     def kc(self, env, state: KCState):
         state._observes_all_hold = state._observes_all_hold & self.cond.kc(env, state)
@@ -566,34 +477,6 @@ class ObserveReal(PExpr):
             (symbolic_value, self.inequality, self.val)
         )
         return state.bdd.true
-
-    def sample(self, env):
-        raise NotImplementedError("Sampling with ObserveReal is not implemented.")
-
-    def pmf(self, env, v):
-        raise NotImplementedError("PMF with ObserveReal is not implemented.")
-
-
-def rejection_sample(expr):
-    num_rej = 0
-    val = None
-    while True:
-        try:
-            val = expr.sample({})
-            break
-        except Rejection:
-            num_rej += 1
-            pass
-    return (val, num_rej)
-
-
-def posterior_pmf(expr, v):
-    pmf_true = expr.pmf({}, True)
-    pmf_false = expr.pmf({}, False)
-    if v:
-        return pmf_true / (pmf_true + pmf_false)
-    else:
-        return pmf_false / (pmf_true + pmf_false)
 
 
 def run_kc(expr):
