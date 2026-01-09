@@ -210,6 +210,39 @@ p10 = Let(
 )
 expected_p10 = expected_p1  # Should be the same as p1 since the inequality is redundant given the equality
 
+# Observe that both Gaussians in a Gaussian union are equal to 0.5, then observe the union again
+# This is to test that observing equalities for all components of a Gaussian union works correctly
+p11 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 2),
+            Let(
+                "x",
+                IfThenElse(
+                    Var("b"),
+                    Var("g1"),
+                    Var("g2"),
+                ),
+                Let(
+                    "_",
+                    ObserveReal(Var("x"), "=", 1.0),
+                    Let(
+                        "_",
+                        ObserveReal(Var("g1"), "=", 1.0),
+                        Let("_", ObserveReal(Var("g2"), "=", 1.0), Var("b")),
+                    ),
+                ),
+            ),
+        ),
+    ),
+)
+expected_p11 = gaussian_pdf(0.0, 1.0, 1.0) * gaussian_pdf(0.0, 2.0, 1.0)
+
 
 def main():
     print("Hello from mixed-kc!")
@@ -226,6 +259,7 @@ def main():
         ("p8", p8, expected_p8),
         ("p9", p9, expected_p9),
         ("p10", p10, expected_p10),
+        ("p11", p11, expected_p11),
     ]:
         count += 1
         print(f"--- {name} ---")
