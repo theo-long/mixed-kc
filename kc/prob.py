@@ -24,6 +24,7 @@ class KCState:
         self._gaussian_observe_stack: list[
             tuple[GaussianUnion | GaussianVariable, Literal["<", ">", "="], float],
         ] = []
+        self._gaussian_observes_all_hold = None
 
     def _get_eq_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
@@ -42,7 +43,7 @@ class KCState:
                 clause = clause & ~self.bdd.var(self._get_eq_node_name(gv.var, high))
         return clause
 
-    def _get_leq_conjuction(
+    def _get_le_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
     ):
         interval_clause = self.bdd.false
@@ -96,7 +97,7 @@ class KCState:
         if inequality == "=":
             return self._get_eq_conjuction(symbolic_value, thresholds, val)
         elif inequality == "<":
-            return self._get_leq_conjuction(symbolic_value, thresholds, val)
+            return self._get_le_conjuction(symbolic_value, thresholds, val)
         elif inequality == ">":
             return self._get_ge_conjuction(symbolic_value, thresholds, val)
         else:
@@ -229,9 +230,11 @@ class KCState:
 
     @property
     def observes_all_hold(self):
-        return (
-            self._observes_all_hold & self._compile_gaussian_observes_all_hold_clause()
-        )
+        if self._gaussian_observes_all_hold is None:
+            self._gaussian_observes_all_hold = (
+                self._compile_gaussian_observes_all_hold_clause()
+            )
+        return self._observes_all_hold & self._gaussian_observes_all_hold
 
     def next_flip(self):
         self.flips += 1
