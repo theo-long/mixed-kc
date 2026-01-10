@@ -1,7 +1,7 @@
 import operator
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import reduce
 from typing import Any, Literal
 
@@ -17,7 +17,7 @@ class KCState:
         self.flips = 0
         self.gaussians = 0
         self.weights = {}
-        self.gaussian_params = {}
+        self.gaussian_params: dict[int, tuple[float, float, float, float]] = {}
         self._observes_all_hold = self.bdd.true
 
         self._gaussian_observe_stack: list[
@@ -185,7 +185,7 @@ class KCState:
         self, var: int, threshold_list: set[float]
     ):
         # Get Gaussian parameters
-        mean, std = self.gaussian_params[var]
+        mean, std, _, _ = self.gaussian_params[var]
 
         # Sort thresholds and remove duplicates
         sorted_thresholds = sorted(list(threshold_list))
@@ -282,8 +282,8 @@ class KCState:
         self.gaussians += 1
         return self.gaussians
 
-    def set_gaussian_params(self, var, mu, sigma):
-        self.gaussian_params[var] = (mu, sigma)
+    def set_gaussian_params(self, var, mu, sigma, lower, upper):
+        self.gaussian_params[var] = (mu, sigma, lower, upper)
 
     def set_weight(self, var, pos_weight, neg_weight):
         self.weights[var] = (pos_weight, neg_weight)
@@ -402,14 +402,24 @@ class Const(AExpr):
 
 
 @dataclass
-class Gaussian(AExpr):
+class TruncatedGaussian(AExpr):
     mean: float
     std: float
+    lower: float
+    upper: float
 
     def kc(self, env, state):
         var = state.next_gaussian()
-        state.set_gaussian_params(var, self.mean, self.std)
+        state.set_gaussian_params(var, self.mean, self.std, self.lower, self.upper)
         return GaussianVariable(var)
+
+
+@dataclass
+class Gaussian(TruncatedGaussian):
+    mean: float
+    std: float
+    lower: float = field(default=float("-inf"), init=False)
+    upper: float = field(default=float("inf"), init=False)
 
 
 @dataclass
@@ -448,7 +458,7 @@ class IfThenElse(PExpr):
             return (condition_bdd & then_result) | (~condition_bdd & else_result)
 
 
-def extend_env(env, extension):
+def extend_env(env: dict[str, Any], extension: dict[str, Any]) -> dict[str, Any]:
     new_env = env.copy()
     new_env.update(extension)
     return new_env
