@@ -3,12 +3,30 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import reduce
+from re import sub
+from tkinter import NO
 from typing import Any, Literal
 
 import dd.autoref as _bdd
 from scipy.stats import norm
 
 from kc.model_count import model_count
+
+
+class TruncationState:
+    def __init__(self):
+        self.gaussians = 0
+        self.truncations: dict[int, set[float]] = defaultdict(set)
+
+    def add_truncation(self, var: int, value: float):
+        self.truncations[var].add(value)
+
+    def get_truncations(self, var: int) -> set[float]:
+        return self.truncations.get(var, set())
+
+    def next_gaussian(self):
+        self.gaussians += 1
+        return self.gaussians
 
 
 class KCState:
@@ -297,12 +315,17 @@ class RealValue(ABC):
 class GaussianVariable(RealValue):
     var: int
 
+    def collect_real_truncation(self, env, state: "TruncationState"):
+        return self
+
 
 @dataclass
 class GaussianUnion(RealValue):
     formulae: list[Any]
     values: list[GaussianVariable]
 
+    def collect_real_truncation(self, env, state: "TruncationState"):
+        return self
 
 def gaussian_pdf(mean, std, val):
     return norm.pdf(val, loc=mean, scale=std)
@@ -382,8 +405,23 @@ def merge_real_values(cond, t, f):
 
 class PExpr(ABC):
     @abstractmethod
-    def kc(self, env: dict[str, Any], state: "KCState") -> Any:
+    def kc(self, env: dict[str, "PExpr"], state: "KCState") -> Any:
+        """Compile this probabilistic expression into the KCState and return the corresponding BDD."""
         raise NotImplementedError()
+
+    @abstractmethod
+    def collect_real_truncation(
+        self, env: dict[str, "PExpr"], state: "TruncationState"
+    ) -> Any:
+        """Collect all the observed inequalities and the Gaussian variables they apply to."""
+        raise NotImplementedError()
+
+    def real_variable_truncation(
+        self, env: dict[str, "PExpr"], state: "TruncationState"
+    ) -> Any:
+        """Apply expression transformation which truncates real variables according to their observed inequalities."""
+        # By default, do nothing (e.g. for expressions that do not involve real variables)
+        return self
 
 
 class AExpr(PExpr):
@@ -399,6 +437,12 @@ class Const(AExpr):
             return state.bdd.true
         else:
             return state.bdd.false
+
+    def collect_real_truncation(self, env, state):
+        return
+
+    def real_variable_truncation(self, env, state):
+        return self
 
 
 @dataclass
@@ -421,6 +465,12 @@ class Gaussian(TruncatedGaussian):
     lower: float = field(default=float("-inf"), init=False)
     upper: float = field(default=float("inf"), init=False)
 
+    def collect_real_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        var = state.next_gaussian()
+        return GaussianVariable(var)
+
 
 @dataclass
 class Var(AExpr):
@@ -428,6 +478,12 @@ class Var(AExpr):
 
     def kc(self, env, state):
         return env[self.var]
+
+    def collect_real_truncation(self, env, state: "TruncationState"):
+        substitued_value = env[self.var]
+        if substitued_value is not None:
+            substitued_value = substitued_value.collect_real_truncation(env, state)
+        return substitued_value
 
 
 @dataclass
@@ -439,6 +495,9 @@ class Flip(PExpr):
         state.bdd.declare(f"flip_{flip_id}")
         state.set_weight(f"flip_{flip_id}", self.prob, 1.0 - self.prob)
         return state.bdd.var(f"flip_{flip_id}")
+
+    def collect_real_truncation(self, env, state: "TruncationState"):
+        return
 
 
 @dataclass
@@ -457,6 +516,14 @@ class IfThenElse(PExpr):
         else:
             return (condition_bdd & then_result) | (~condition_bdd & else_result)
 
+    def collect_real_truncation(self, env, state: "TruncationState"):
+        then_result = self.then_expr.collect_real_truncation(env, state)
+        else_result = self.else_expr.collect_real_truncation(env, state)
+        if isinstance(then_result, RealValue):
+            return merge_real_values(_bdd.BDD().true, then_result, else_result)
+        else:
+            return
+
 
 def extend_env(env: dict[str, Any], extension: dict[str, Any]) -> dict[str, Any]:
     new_env = env.copy()
@@ -473,6 +540,12 @@ class Let(PExpr):
     def kc(self, env, state):
         new_env = extend_env(env, {self.var: self.binding.kc(env, state)})
         return self.body.kc(new_env, state)
+
+    def collect_real_truncation(self, env, state: "TruncationState"):
+        new_env = extend_env(
+            env, {self.var: self.binding.collect_real_truncation(env, state)}
+        )
+        return self.body.collect_real_truncation(new_env, state)
 
 
 class Rejection(Exception):
@@ -514,8 +587,28 @@ class ObserveReal(PExpr):
         )
         return state.bdd.true
 
+    def collect_real_truncation(self, env, state):
+        if self.inequality == "=":
+            return
 
-def run_kc(expr):
+        symbolic_value = self.symbolic_value.collect_real_truncation(env, state)
+
+        if isinstance(symbolic_value, GaussianVariable):
+            state.add_truncation(symbolic_value.var, self.val)
+        elif isinstance(symbolic_value, GaussianUnion):
+            for gv in symbolic_value.values:
+                state.add_truncation(gv.var, self.val)
+        else:
+            raise TypeError(
+                f"Unexpected type for symbolic_value: {type(self.symbolic_value)}"
+            )
+
+        return
+
+
+def run_kc(expr: PExpr):
+    state = TruncationState()
+    expr = expr.real_variable_truncation({}, state)
     state = KCState()
     bdd = expr.kc({}, state)
     unnormalized_count = model_count(
