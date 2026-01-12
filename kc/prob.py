@@ -590,6 +590,16 @@ class Gaussian(TruncatedGaussian):
 
 
 @dataclass
+class GatedGaussian(AExpr):
+    mean: float
+    std: float
+    truncations: list[float]
+
+    def kc(self, env, state):
+        raise NotImplementedError()
+
+
+@dataclass
 class Var(AExpr):
     var: str
 
