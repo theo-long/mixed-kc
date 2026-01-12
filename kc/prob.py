@@ -52,7 +52,7 @@ def create_truncated_gaussian_vars(
 ):
     """Pulls all gaussians out to top-level variables and splits them into truncated gaussians."""
     return _create_truncated_gaussian_vars_helper(
-        expr.real_variable_truncation({}, GaussianVariableCounter()),
+        expr.replace_gaussians({}, GaussianVariableCounter()),
         state.gaussian_params.copy(),
         {k: v.copy() for k, v in state.truncations.items()},
     )
@@ -514,7 +514,7 @@ class PExpr(ABC):
         """Collect all the observed inequalities and the Gaussian variables they apply to."""
         raise NotImplementedError()
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, "PExpr"], state: "GaussianVariableCounter"
     ) -> Any:
         """Apply expression transformation which truncates real variables according to their observed inequalities."""
@@ -539,7 +539,7 @@ class Const(AExpr):
     def collect_real_truncation(self, env, state):
         return
 
-    def real_variable_truncation(self, env, state):
+    def replace_gaussians(self, env, state):
         return self
 
 
@@ -555,7 +555,7 @@ class TruncatedGaussian(AExpr):
         state.set_gaussian_params(var, self.mean, self.std, self.lower, self.upper)
         return GaussianVariable(var)
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         return self
@@ -582,7 +582,7 @@ class Gaussian(TruncatedGaussian):
         state.set_gaussian_params(var, self.mean, self.std)
         return GaussianVariable(var)
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         var = state.next_gaussian()
@@ -602,7 +602,7 @@ class Var(AExpr):
             substitued_value = substitued_value.collect_real_truncation(env, state)
         return substitued_value
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         return self
@@ -621,7 +621,7 @@ class Flip(PExpr):
     def collect_real_truncation(self, env, state: "TruncationState"):
         return
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         return self
@@ -652,12 +652,12 @@ class IfThenElse(PExpr):
         else:
             return
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
-        new_cond = self.cond.real_variable_truncation(env, state)
-        new_then_expr = self.then_expr.real_variable_truncation(env, state)
-        new_else_expr = self.else_expr.real_variable_truncation(env, state)
+        new_cond = self.cond.replace_gaussians(env, state)
+        new_then_expr = self.then_expr.replace_gaussians(env, state)
+        new_else_expr = self.else_expr.replace_gaussians(env, state)
         return IfThenElse(new_cond, new_then_expr, new_else_expr)
 
 
@@ -683,11 +683,11 @@ class Let(PExpr):
         )
         return self.body.collect_real_truncation(new_env, state)
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
-        new_binding = self.binding.real_variable_truncation(env, state)
-        new_body = self.body.real_variable_truncation(env, state)
+        new_binding = self.binding.replace_gaussians(env, state)
+        new_body = self.body.replace_gaussians(env, state)
         return Let(self.var, new_binding, new_body)
 
 
@@ -708,10 +708,10 @@ class Observe(PExpr):
     ) -> Any:
         return self.cond.collect_real_truncation(env, state)
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
-        new_cond = self.cond.real_variable_truncation(env, state)
+        new_cond = self.cond.replace_gaussians(env, state)
         return Observe(new_cond)
 
 
@@ -759,10 +759,10 @@ class ObserveReal(PExpr):
 
         return
 
-    def real_variable_truncation(
+    def replace_gaussians(
         self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
-        new_symbolic_value = self.symbolic_value.real_variable_truncation(env, state)
+        new_symbolic_value = self.symbolic_value.replace_gaussians(env, state)
         return ObserveReal(new_symbolic_value, self.inequality, self.val)
 
 
