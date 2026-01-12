@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import reduce
-from random import gauss
 from typing import Any, Literal
 
 import dd.autoref as _bdd
@@ -12,11 +11,25 @@ from scipy.stats import norm
 from kc.model_count import model_count
 
 
-class TruncationState:
-    def __init__(self):
+class GaussianVariableCounter:
+    def __init__(self) -> None:
         self.gaussians = 0
+        self.gaussian_params: dict[int, tuple[float, float, float, float]] = {}
+
+    def next_gaussian(self):
+        self.gaussians += 1
+        return self.gaussians
+
+    def set_gaussian_params(
+        self, var, mu, sigma, lower=float("-inf"), upper=float("inf")
+    ):
+        self.gaussian_params[var] = (mu, sigma, lower, upper)
+
+
+class TruncationState(GaussianVariableCounter):
+    def __init__(self):
         self.truncations: dict[int, set[float]] = defaultdict(set)
-        self.gaussian_params: dict[int, tuple[float, float]] = {}
+        super().__init__()
 
     def add_truncation(self, var: int, value: float):
         self.truncations[var].add(value)
@@ -24,29 +37,38 @@ class TruncationState:
     def get_truncations(self, var: int) -> set[float]:
         return self.truncations.get(var, set())
 
-    def next_gaussian(self):
-        self.gaussians += 1
-        return self.gaussians
-
-    def set_gaussian_params(self, var, mu, sigma):
-        self.gaussian_params[var] = (mu, sigma)
-
 
 def get_gaussian_var_name(gaussian: int):
     return f"_g{gaussian}"
 
 
+def get_truncated_flip_name(gaussian: int, upper: float, lower: float):
+    return f"_g{gaussian}<{upper}|>{lower}"
+
+
 def create_truncated_gaussian_vars(
-    expr,
-    gaussians_to_params: dict[int, tuple[float, float]],
-    gaussians_to_truncations: dict[int, set[float]],
+    expr: "PExpr",
+    state: "TruncationState",
 ):
     """Pulls all gaussians out to top-level variables and splits them into truncated gaussians."""
+    return _create_truncated_gaussian_vars_helper(
+        expr.real_variable_truncation({}, GaussianVariableCounter()),
+        state.gaussian_params.copy(),
+        {k: v.copy() for k, v in state.truncations.items()},
+    )
+
+
+def _create_truncated_gaussian_vars_helper(
+    expr: "PExpr",
+    gaussians_to_params: dict[int, tuple[float, float, float, float]],
+    gaussians_to_truncations: dict[int, set[float]],
+):
+    """Recursive helper"""
     if len(gaussians_to_params) == 0:
         return expr
 
-    gaussian, (mean, std) = gaussians_to_params.popitem()
-    truncations = gaussians_to_truncations.pop(gaussian)
+    gaussian, (mean, std, _, _) = gaussians_to_params.popitem()
+    truncations = gaussians_to_truncations.pop(gaussian, set())
 
     def build_nested_if_then_else(lower: float, truncations: list[float]):
         if truncations:
@@ -68,7 +90,7 @@ def create_truncated_gaussian_vars(
             gaussian_cdf(mean, std, upper) - gaussian_cdf(mean, std, lower)
         ) / remaining_probability_mass
 
-        flip_name = f"_g{gaussian}<{upper}|>{lower}"
+        flip_name = get_truncated_flip_name(gaussian, upper, lower)
 
         return Let(
             flip_name,
@@ -83,25 +105,24 @@ def create_truncated_gaussian_vars(
     return Let(
         get_gaussian_var_name(gaussian),
         build_nested_if_then_else(float("-inf"), sorted(truncations)),
-        create_truncated_gaussian_vars(
+        _create_truncated_gaussian_vars_helper(
             expr, gaussians_to_params, gaussians_to_truncations
         ),
     )
 
 
-class KCState:
+class KCState(GaussianVariableCounter):
     def __init__(self):
         self.bdd = _bdd.BDD()
         self.flips = 0
-        self.gaussians = 0
         self.weights = {}
-        self.gaussian_params: dict[int, tuple[float, float, float, float]] = {}
         self._observes_all_hold = self.bdd.true
 
         self._gaussian_observe_stack: list[
             tuple[GaussianUnion | GaussianVariable, Literal["<", ">", "="], float],
         ] = []
         self._gaussian_observes_all_hold = None
+        super().__init__()
 
     def _get_eq_conjuction(
         self, gv: "GaussianVariable", thresholds: list[float], val: float
@@ -356,13 +377,6 @@ class KCState:
         self.flips += 1
         return self.flips
 
-    def next_gaussian(self):
-        self.gaussians += 1
-        return self.gaussians
-
-    def set_gaussian_params(self, var, mu, sigma, lower, upper):
-        self.gaussian_params[var] = (mu, sigma, lower, upper)
-
     def set_weight(self, var, pos_weight, neg_weight):
         self.weights[var] = (pos_weight, neg_weight)
 
@@ -501,7 +515,7 @@ class PExpr(ABC):
         raise NotImplementedError()
 
     def real_variable_truncation(
-        self, env: dict[str, "PExpr"], state: "TruncationState"
+        self, env: dict[str, "PExpr"], state: "GaussianVariableCounter"
     ) -> Any:
         """Apply expression transformation which truncates real variables according to their observed inequalities."""
         # By default, do nothing (e.g. for expressions that do not involve real variables)
@@ -542,7 +556,7 @@ class TruncatedGaussian(AExpr):
         return GaussianVariable(var)
 
     def real_variable_truncation(
-        self, env: dict[str, PExpr], state: TruncationState
+        self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         return self
 
@@ -569,9 +583,10 @@ class Gaussian(TruncatedGaussian):
         return GaussianVariable(var)
 
     def real_variable_truncation(
-        self, env: dict[str, PExpr], state: TruncationState
+        self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
-        raise NotImplementedError()
+        var = state.next_gaussian()
+        return Var(get_gaussian_var_name(var))
 
 
 @dataclass
@@ -588,7 +603,7 @@ class Var(AExpr):
         return substitued_value
 
     def real_variable_truncation(
-        self, env: dict[str, PExpr], state: TruncationState
+        self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         return self
 
@@ -607,7 +622,7 @@ class Flip(PExpr):
         return
 
     def real_variable_truncation(
-        self, env: dict[str, PExpr], state: TruncationState
+        self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         return self
 
@@ -638,7 +653,7 @@ class IfThenElse(PExpr):
             return
 
     def real_variable_truncation(
-        self, env: dict[str, PExpr], state: TruncationState
+        self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         new_cond = self.cond.real_variable_truncation(env, state)
         new_then_expr = self.then_expr.real_variable_truncation(env, state)
@@ -669,7 +684,7 @@ class Let(PExpr):
         return self.body.collect_real_truncation(new_env, state)
 
     def real_variable_truncation(
-        self, env: dict[str, PExpr], state: TruncationState
+        self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         new_binding = self.binding.real_variable_truncation(env, state)
         new_body = self.body.real_variable_truncation(env, state)
@@ -694,7 +709,7 @@ class Observe(PExpr):
         return self.cond.collect_real_truncation(env, state)
 
     def real_variable_truncation(
-        self, env: dict[str, PExpr], state: TruncationState
+        self, env: dict[str, PExpr], state: GaussianVariableCounter
     ) -> Any:
         new_cond = self.cond.real_variable_truncation(env, state)
         return Observe(new_cond)
@@ -744,14 +759,17 @@ class ObserveReal(PExpr):
 
         return
 
+    def real_variable_truncation(
+        self, env: dict[str, PExpr], state: GaussianVariableCounter
+    ) -> Any:
+        new_symbolic_value = self.symbolic_value.real_variable_truncation(env, state)
+        return ObserveReal(new_symbolic_value, self.inequality, self.val)
+
 
 def run_kc(expr: PExpr):
     state = TruncationState()
     expr.collect_real_truncation({}, state)
-    expr = create_truncated_gaussian_vars(
-        expr, state.gaussian_params, state.truncations
-    )
-    expr = expr.real_variable_truncation({}, state)
+    expr = create_truncated_gaussian_vars(expr, state)
     state = KCState()
     bdd = expr.kc({}, state)
     unnormalized_count = model_count(
