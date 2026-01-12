@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import reduce
+from random import gauss
 from typing import Any, Literal
 
 import dd.autoref as _bdd
@@ -15,6 +16,7 @@ class TruncationState:
     def __init__(self):
         self.gaussians = 0
         self.truncations: dict[int, set[float]] = defaultdict(set)
+        self.gaussian_params: dict[int, tuple[float, float]] = {}
 
     def add_truncation(self, var: int, value: float):
         self.truncations[var].add(value)
@@ -25,6 +27,66 @@ class TruncationState:
     def next_gaussian(self):
         self.gaussians += 1
         return self.gaussians
+
+    def set_gaussian_params(self, var, mu, sigma):
+        self.gaussian_params[var] = (mu, sigma)
+
+
+def get_gaussian_var_name(gaussian: int):
+    return f"_g{gaussian}"
+
+
+def create_truncated_gaussian_vars(
+    expr,
+    gaussians_to_params: dict[int, tuple[float, float]],
+    gaussians_to_truncations: dict[int, set[float]],
+):
+    """Pulls all gaussians out to top-level variables and splits them into truncated gaussians."""
+    if len(gaussians_to_params) == 0:
+        return expr
+
+    gaussian, (mean, std) = gaussians_to_params.popitem()
+    truncations = gaussians_to_truncations.pop(gaussian)
+
+    def build_nested_if_then_else(lower: float, truncations: list[float]):
+        if truncations:
+            upper = truncations.pop(0)
+        else:
+            upper = float("inf")
+
+        truncated_gaussian = TruncatedGaussian(mean, std, lower, upper)
+
+        if upper == float("inf"):
+            return truncated_gaussian
+
+        if lower == float("-inf"):
+            remaining_probability_mass = 1
+        else:
+            remaining_probability_mass = 1 - gaussian_cdf(mean, std, lower)
+
+        flip_prob = (
+            gaussian_cdf(mean, std, upper) - gaussian_cdf(mean, std, lower)
+        ) / remaining_probability_mass
+
+        flip_name = f"_g{gaussian}<{upper}|>{lower}"
+
+        return Let(
+            flip_name,
+            Flip(flip_prob),
+            IfThenElse(
+                Var(flip_name),
+                truncated_gaussian,
+                build_nested_if_then_else(upper, truncations),
+            ),
+        )
+
+    return Let(
+        get_gaussian_var_name(gaussian),
+        build_nested_if_then_else(float("-inf"), sorted(truncations)),
+        create_truncated_gaussian_vars(
+            expr, gaussians_to_params, gaussians_to_truncations
+        ),
+    )
 
 
 class KCState:
@@ -327,11 +389,11 @@ class GaussianUnion(RealValue):
 
 
 def gaussian_pdf(mean, std, val):
-    return norm.pdf(val, loc=mean, scale=std)
+    return norm.pdf(val, loc=mean, scale=std).item()
 
 
 def gaussian_cdf(mean, std, val):
-    return norm.cdf(val, loc=mean, scale=std)
+    return norm.cdf(val, loc=mean, scale=std).item()
 
 
 def merge_real_values_ignore_cond(t, f):
@@ -443,7 +505,7 @@ class PExpr(ABC):
     ) -> Any:
         """Apply expression transformation which truncates real variables according to their observed inequalities."""
         # By default, do nothing (e.g. for expressions that do not involve real variables)
-        return self
+        raise NotImplementedError()
 
 
 class AExpr(PExpr):
@@ -479,6 +541,18 @@ class TruncatedGaussian(AExpr):
         state.set_gaussian_params(var, self.mean, self.std, self.lower, self.upper)
         return GaussianVariable(var)
 
+    def real_variable_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        return self
+
+    def collect_real_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        raise ValueError(
+            "TruncatedGaussian expressions should not appear in original expr"
+        )
+
 
 @dataclass
 class Gaussian(TruncatedGaussian):
@@ -491,7 +565,13 @@ class Gaussian(TruncatedGaussian):
         self, env: dict[str, PExpr], state: TruncationState
     ) -> Any:
         var = state.next_gaussian()
+        state.set_gaussian_params(var, self.mean, self.std)
         return GaussianVariable(var)
+
+    def real_variable_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        raise NotImplementedError()
 
 
 @dataclass
@@ -507,6 +587,11 @@ class Var(AExpr):
             substitued_value = substitued_value.collect_real_truncation(env, state)
         return substitued_value
 
+    def real_variable_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        return self
+
 
 @dataclass
 class Flip(PExpr):
@@ -520,6 +605,11 @@ class Flip(PExpr):
 
     def collect_real_truncation(self, env, state: "TruncationState"):
         return
+
+    def real_variable_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        return self
 
 
 @dataclass
@@ -539,12 +629,21 @@ class IfThenElse(PExpr):
             return (condition_bdd & then_result) | (~condition_bdd & else_result)
 
     def collect_real_truncation(self, env, state: "TruncationState"):
+        self.cond.collect_real_truncation(env, state)
         then_result = self.then_expr.collect_real_truncation(env, state)
         else_result = self.else_expr.collect_real_truncation(env, state)
         if isinstance(then_result, RealValue):
             return merge_real_values_ignore_cond(then_result, else_result)
         else:
             return
+
+    def real_variable_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        new_cond = self.cond.real_variable_truncation(env, state)
+        new_then_expr = self.then_expr.real_variable_truncation(env, state)
+        new_else_expr = self.else_expr.real_variable_truncation(env, state)
+        return IfThenElse(new_cond, new_then_expr, new_else_expr)
 
 
 def extend_env(env: dict[str, Any], extension: dict[str, Any]) -> dict[str, Any]:
@@ -569,6 +668,13 @@ class Let(PExpr):
         )
         return self.body.collect_real_truncation(new_env, state)
 
+    def real_variable_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        new_binding = self.binding.real_variable_truncation(env, state)
+        new_body = self.body.real_variable_truncation(env, state)
+        return Let(self.var, new_binding, new_body)
+
 
 class Rejection(Exception):
     pass
@@ -581,6 +687,17 @@ class Observe(PExpr):
     def kc(self, env, state: KCState):
         state._observes_all_hold = state._observes_all_hold & self.cond.kc(env, state)
         return state.bdd.true
+
+    def collect_real_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        return self.cond.collect_real_truncation(env, state)
+
+    def real_variable_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        new_cond = self.cond.real_variable_truncation(env, state)
+        return Observe(new_cond)
 
 
 # Things to think about:
@@ -631,6 +748,9 @@ class ObserveReal(PExpr):
 def run_kc(expr: PExpr):
     state = TruncationState()
     expr.collect_real_truncation({}, state)
+    expr = create_truncated_gaussian_vars(
+        expr, state.gaussian_params, state.truncations
+    )
     expr = expr.real_variable_truncation({}, state)
     state = KCState()
     bdd = expr.kc({}, state)
