@@ -282,7 +282,7 @@ p12 = Let(
                             ),
                             Let(
                                 "_",
-                                ObserveReal(Var("g1 or g2 or g3"), ">", 0.0),
+                                ObserveReal(Var("g1 or g2 or g3"), ">", 1.0),
                                 flip_1_and_flip_2,
                             ),
                         ),
