@@ -3,8 +3,6 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import reduce
-from re import sub
-from tkinter import NO
 from typing import Any, Literal
 
 import dd.autoref as _bdd
@@ -327,12 +325,36 @@ class GaussianUnion(RealValue):
     def collect_real_truncation(self, env, state: "TruncationState"):
         return self
 
+
 def gaussian_pdf(mean, std, val):
     return norm.pdf(val, loc=mean, scale=std)
 
 
 def gaussian_cdf(mean, std, val):
     return norm.cdf(val, loc=mean, scale=std)
+
+
+def merge_real_values_ignore_cond(t, f):
+    """When performing truncation we don't need to worry about cond"""
+    # Extract formulae and values from t (then branch)
+    if isinstance(t, GaussianVariable):
+        t_values = [t]
+    elif isinstance(t, GaussianUnion):
+        t_values = t.values
+    else:
+        raise TypeError(f"Unexpected type for t: {type(t)}")
+
+    # Extract formulae and values from f (else branch)
+    if isinstance(f, GaussianVariable):
+        f_values = [f]
+    elif isinstance(f, GaussianUnion):
+        f_values = f.values
+    else:
+        raise TypeError(f"Unexpected type for f: {type(f)}")
+
+    gaussian_vars = {gaussian.var: gaussian for gaussian in f_values + t_values}
+
+    return GaussianUnion(formulae=[], values=list(gaussian_vars.values()))
 
 
 def merge_real_values(cond, t, f):
@@ -520,7 +542,7 @@ class IfThenElse(PExpr):
         then_result = self.then_expr.collect_real_truncation(env, state)
         else_result = self.else_expr.collect_real_truncation(env, state)
         if isinstance(then_result, RealValue):
-            return merge_real_values(_bdd.BDD().true, then_result, else_result)
+            return merge_real_values_ignore_cond(then_result, else_result)
         else:
             return
 
@@ -608,6 +630,7 @@ class ObserveReal(PExpr):
 
 def run_kc(expr: PExpr):
     state = TruncationState()
+    expr.collect_real_truncation({}, state)
     expr = expr.real_variable_truncation({}, state)
     state = KCState()
     bdd = expr.kc({}, state)
