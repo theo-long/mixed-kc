@@ -8,6 +8,7 @@ from kc.prob import (
     gaussian_cdf,
     gaussian_pdf,
     run_kc,
+    Const,
 )
 
 # Flip a coin, choose between two different Gaussians, observe the result
@@ -243,6 +244,60 @@ p11 = Let(
 )
 expected_p11 = gaussian_pdf(0.0, 1.0, 1.0) * gaussian_pdf(0.0, 2.0, 1.0)
 
+# We have IID Gaussians in a nested if-then-else
+# We observe that the first is > 0, that the combination of the first two is > 0, and that the whole thing is > 0
+flip_1_and_flip_2 = IfThenElse(
+    Var("flip_1"),
+    Var("flip_2"),
+    Const(False),
+)
+p12 = Let(
+    "flip_1",
+    Flip(0.5),
+    Let(
+        "flip_2",
+        Flip(0.5),
+        Let(
+            "g1",
+            Gaussian(0, 1),
+            Let(
+                "_",
+                ObserveReal(Var("g1"), ">", 0.0),
+                Let(
+                    "g1 or g2",
+                    IfThenElse(
+                        Var("flip_1"),
+                        Var("g1"),
+                        Gaussian(0, 1),
+                    ),
+                    Let(
+                        "_",
+                        ObserveReal(Var("g1 or g2"), ">", 0.0),
+                        Let(
+                            "g1 or g2 or g3",
+                            IfThenElse(
+                                Var("flip_2"),
+                                Var("g1 or g2"),
+                                Gaussian(0, 1),
+                            ),
+                            Let(
+                                "_",
+                                ObserveReal(Var("g1 or g2 or g3"), ">", 0.0),
+                                flip_1_and_flip_2,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    ),
+)
+# We know g1 or g2 is > 0, whereas g3 is 50/50 positive/negative
+# Therefore 2/3 probability of flip_2
+# Similarly for g2 vs g2
+# So expected prob is (2/3) ** 2
+expected_p12 = (2 / 3) ** 2
+
 
 def main():
     print("Hello from mixed-kc!")
@@ -260,6 +315,7 @@ def main():
         ("p9", p9, expected_p9),
         ("p10", p10, expected_p10),
         ("p11", p11, expected_p11),
+        ("p12", p12, expected_p12),
     ]:
         count += 1
         print(f"--- {name} ---")
