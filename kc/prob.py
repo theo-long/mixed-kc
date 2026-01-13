@@ -1,3 +1,6 @@
+from ast import Not
+import bisect
+import itertools
 import operator
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -6,6 +9,7 @@ from functools import reduce
 from typing import Any, Literal
 
 import dd.autoref as _bdd
+from numpy import sort
 from scipy.stats import norm
 
 from kc.model_count import model_count
@@ -14,16 +18,14 @@ from kc.model_count import model_count
 class GaussianVariableCounter:
     def __init__(self) -> None:
         self.gaussians = 0
-        self.gaussian_params: dict[int, tuple[float, float, float, float]] = {}
+        self.gaussian_params: dict[int, tuple[float, float]] = {}
 
     def next_gaussian(self):
         self.gaussians += 1
         return self.gaussians
 
-    def set_gaussian_params(
-        self, var, mu, sigma, lower=float("-inf"), upper=float("inf")
-    ):
-        self.gaussian_params[var] = (mu, sigma, lower, upper)
+    def set_gaussian_params(self, var, mu, sigma):
+        self.gaussian_params[var] = (mu, sigma)
 
 
 class TruncationState(GaussianVariableCounter):
@@ -46,77 +48,14 @@ def get_truncated_flip_name(gaussian: int, upper: float, lower: float):
     return f"_g{gaussian}<{upper}|>{lower}"
 
 
-def create_truncated_gaussian_vars(
-    expr: "PExpr",
-    state: "TruncationState",
-):
-    """Pulls all gaussians out to top-level variables and splits them into truncated gaussians."""
-    return _create_truncated_gaussian_vars_helper(
-        expr.replace_gaussians({}, GaussianVariableCounter()),
-        state.gaussian_params.copy(),
-        {k: v.copy() for k, v in state.truncations.items()},
-    )
-
-
-def _create_truncated_gaussian_vars_helper(
-    expr: "PExpr",
-    gaussians_to_params: dict[int, tuple[float, float, float, float]],
-    gaussians_to_truncations: dict[int, set[float]],
-):
-    """Recursive helper"""
-    if len(gaussians_to_params) == 0:
-        return expr
-
-    gaussian, (mean, std, _, _) = gaussians_to_params.popitem()
-    truncations = gaussians_to_truncations.pop(gaussian, set())
-
-    def build_nested_if_then_else(lower: float, truncations: list[float]):
-        if truncations:
-            upper = truncations.pop(0)
-        else:
-            upper = float("inf")
-
-        truncated_gaussian = TruncatedGaussian(mean, std, lower, upper)
-
-        if upper == float("inf"):
-            return truncated_gaussian
-
-        if lower == float("-inf"):
-            remaining_probability_mass = 1
-        else:
-            remaining_probability_mass = 1 - gaussian_cdf(mean, std, lower)
-
-        flip_prob = (
-            gaussian_cdf(mean, std, upper) - gaussian_cdf(mean, std, lower)
-        ) / remaining_probability_mass
-
-        flip_name = get_truncated_flip_name(gaussian, upper, lower)
-
-        return Let(
-            flip_name,
-            Flip(flip_prob),
-            IfThenElse(
-                Var(flip_name),
-                truncated_gaussian,
-                build_nested_if_then_else(upper, truncations),
-            ),
-        )
-
-    return Let(
-        get_gaussian_var_name(gaussian),
-        build_nested_if_then_else(float("-inf"), sorted(truncations)),
-        _create_truncated_gaussian_vars_helper(
-            expr, gaussians_to_params, gaussians_to_truncations
-        ),
-    )
-
-
 class KCState(GaussianVariableCounter):
-    def __init__(self):
+    def __init__(self, truncation_state: TruncationState):
         self.bdd = _bdd.BDD()
         self.flips = 0
         self.weights = {}
         self._observes_all_hold = self.bdd.true
+        self.truncations = truncation_state.truncations
+        self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
 
         self._gaussian_observe_stack: list[
             tuple[GaussianUnion | GaussianVariable, Literal["<", ">", "="], float],
@@ -124,254 +63,174 @@ class KCState(GaussianVariableCounter):
         self._gaussian_observes_all_hold = None
         super().__init__()
 
-    def _get_eq_conjuction(
-        self, gv: "GaussianVariable", thresholds: list[float], val: float
-    ):
-        equality_clause = self.bdd.true
-        for i in range(len(thresholds) - 1):
-            low, high = thresholds[i], thresholds[i + 1]
-            if low == val:
-                equality_clause = equality_clause & self.bdd.var(
-                    self._get_eq_node_name(gv.var, low)
-                )
-            elif low != float("-inf"):
-                equality_clause = equality_clause & ~self.bdd.var(
-                    self._get_eq_node_name(gv.var, low)
-                )
-        return equality_clause
-
-    def _get_lt_conjuction(
-        self, gv: "GaussianVariable", thresholds: list[float], val: float
-    ):
-        interval_allowed_clause = self.bdd.false
-        interval_disallowed_clause = self.bdd.true
-        equality_disallowed_clause = self.bdd.true
-        equality_allowed_clause = self.bdd.false
-        for i in range(len(thresholds) - 1):
-            low, high = thresholds[i], thresholds[i + 1]
-
-            # Cannot observe equality for values greater than val
-            if (high >= val) and (high != float("inf")):
-                equality_disallowed_clause = equality_disallowed_clause & ~self.bdd.var(
-                    self._get_eq_node_name(gv.var, high)
-                )
-
-            if high < val:
-                equality_allowed_clause = equality_allowed_clause | self.bdd.var(
-                    self._get_eq_node_name(gv.var, high)
-                )
-
-            # Can observe interval for intervals less than or equal to val
-            if high <= val:
-                interval_allowed_clause = interval_allowed_clause | self.bdd.var(
-                    self._get_interval_node_name(gv.var, low, high)
-                )
-
-            # Cannot observe interval for intervals greater than val
-            if low >= val:
-                interval_disallowed_clause = interval_disallowed_clause & ~self.bdd.var(
-                    self._get_interval_node_name(gv.var, low, high)
-                )
-
-        # XOR between interval and equality clauses
-        allowed_clause = (interval_allowed_clause & ~equality_allowed_clause) | (
-            ~interval_allowed_clause & equality_allowed_clause
-        )
-        return allowed_clause & interval_disallowed_clause & equality_disallowed_clause
-
-    def _get_gt_conjuction(
-        self, gv: "GaussianVariable", thresholds: list[float], val: float
-    ):
-        interval_allowed_clause = self.bdd.false
-        interval_disallowed_clause = self.bdd.true
-        equality_disallowed_clause = self.bdd.true
-        equality_allowed_clause = self.bdd.false
-        for i in range(len(thresholds) - 1):
-            low, high = thresholds[i], thresholds[i + 1]
-
-            # Cannot observe equality for values less than val
-            if (low <= val) and (low != float("-inf")):
-                equality_disallowed_clause = equality_disallowed_clause & ~self.bdd.var(
-                    self._get_eq_node_name(gv.var, low)
-                )
-
-            if low > val:
-                equality_allowed_clause = equality_allowed_clause | self.bdd.var(
-                    self._get_eq_node_name(gv.var, low)
-                )
-
-            # Can observe interval for intervals greater than or equal to val
-            if low >= val:
-                interval_allowed_clause = interval_allowed_clause | self.bdd.var(
-                    self._get_interval_node_name(gv.var, low, high)
-                )
-
-            if high <= val:
-                interval_disallowed_clause = interval_disallowed_clause & ~self.bdd.var(
-                    self._get_interval_node_name(gv.var, low, high)
-                )
-
-        # XOR between interval and equality clauses
-        allowed_clause = (interval_allowed_clause & ~equality_allowed_clause) | (
-            ~interval_allowed_clause & equality_allowed_clause
-        )
-
-        return allowed_clause & interval_disallowed_clause & equality_disallowed_clause
-
-    def _get_gaussian_variable_observe_clause(
-        self,
-        symbolic_value: "GaussianVariable",
-        inequality: Literal["<", ">", "="],
-        val: float,
-        thresholds: list[float],
-    ):
-        if inequality == "=":
-            return self._get_eq_conjuction(symbolic_value, thresholds, val)
-        elif inequality == "<":
-            return self._get_lt_conjuction(symbolic_value, thresholds, val)
-        elif inequality == ">":
-            return self._get_gt_conjuction(symbolic_value, thresholds, val)
-        else:
-            raise ValueError(f"Unexpected inequality: {inequality}")
-
-    def _get_gaussian_union_observe_clause(
+    def get_gaussian_union_equality_expression(
         self,
         symbolic_value: "GaussianUnion",
-        inequality: Literal["<", ">", "="],
         val: float,
-        thresholds: dict[int, list[float]],
+    ):
+        unguarded_clauses = []
+        equality_nodes = []
+        for v in symbolic_value.values:
+            # get the observe clause for this value
+            clause, equality_node = self.get_gaussian_variable_equality_expression(
+                v.var, val
+            )
+            unguarded_clauses.append(clause)
+            equality_nodes.append(equality_node)
+
+        guarded_clause = self.bdd.false
+        for i in range(len(symbolic_value.values)):
+            clause = unguarded_clauses[i]
+            # For equality, we need to ensure that only one of the equality clauses is true
+            # This is to ensure that the density is only counted once
+            for j in range(len(symbolic_value.values)):
+                if i != j:
+                    clause = clause & ~equality_nodes[j]
+            # Add formula guarding this value to the clause
+            clause = clause & symbolic_value.formulae[i]
+            guarded_clause = guarded_clause | clause
+
+        return guarded_clause
+
+    def get_gaussian_union_inequality_expression(
+        self,
+        symbolic_value: "GaussianUnion",
+        inequality: Literal["<=", ">"],
+        val: float,
     ):
         unguarded_clauses = []
         for v in symbolic_value.values:
             # get the observe clause for this value
-            clause = self._get_gaussian_variable_observe_clause(
-                v, inequality, val, thresholds[v.var]
+            clause = self.get_gaussian_variable_inequality_expression(
+                v.var, inequality, val
             )
             unguarded_clauses.append(clause)
 
-        guarded_clauses = []
-        for i in range(len(symbolic_value.values)):
-            # this clause is true and all the other clauses in the union are false
-            clause = unguarded_clauses[i]
-            if inequality == "=":
-                # For equality, we need to ensure that only one of the equality clauses is true
-                # This is to ensure that the density is only counted once
-                clause = clause & reduce(
-                    operator.and_,
-                    [
-                        ~self.bdd.var(
-                            self._get_eq_node_name(symbolic_value.values[j].var, val)
-                        )
-                        for j in range(len(symbolic_value.values))
-                        if j != i
-                    ],
-                )
-            # Add formula guarding this value to the clause
-            clause = clause & symbolic_value.formulae[i]
-            guarded_clauses.append(clause)
+        return reduce(
+            operator.or_,
+            (
+                formula & clause
+                for formula, clause in zip(symbolic_value.formulae, unguarded_clauses)
+            ),
+            self.bdd.false,
+        )
 
-        # We OR together all the guarded clauses
-        clause = reduce(operator.or_, guarded_clauses)
-        return clause
+    def _get_eq_node_name(self, var: int, val: float, lower: float, upper: float):
+        return f"_g{var}={val}|{lower}<g{var}<={upper}"
 
-    def _get_eq_node_name(self, var: int, threshold: float):
-        return f"gaussian_{var}_eq_{threshold}"
+    def _get_interval_node_name(self, var: int, lower: float, upper: float):
+        return f"_g{var}<={upper}|>{lower}"
 
-    def _get_interval_node_name(self, var: int, a: float, b: float):
-        return f"gaussian_{var}_interval_{a}_{b}"
-
-    def _add_bdd_nodes_for_gaussian_variable(
-        self, var: int, threshold_list: set[float]
-    ):
+    def add_bdd_nodes_for_gaussian_variable(self, var: int):
         # Get Gaussian parameters
-        mean, std, _, _ = self.gaussian_params[var]
-
-        # Sort thresholds and remove duplicates
-        sorted_thresholds = sorted(list(threshold_list))
+        mean, std = self.gaussian_params[var]
+        sorted_thresholds = sorted(self.truncations.get(var, set()))
         sorted_thresholds.insert(0, float("-inf"))
         sorted_thresholds.append(float("inf"))
 
-        # Create BDD nodes for intervals (open intervals: a < x < b)
+        # Create BDD nodes for intervals (half open intervals: a < x <= b)
         for i in range(len(sorted_thresholds) - 1):
-            a = sorted_thresholds[i]
-            b = sorted_thresholds[i + 1]
+            lower = sorted_thresholds[i]
+            upper = sorted_thresholds[i + 1]
 
             # Create BDD node for this interval
-            interval_node_name = self._get_interval_node_name(var, a, b)
+            interval_node_name = self._get_interval_node_name(var, lower, upper)
             self.bdd.declare(interval_node_name)
 
-            # Calculate weight using CDF
-            if b == float("inf"):
-                prob_interval = 1.0 - gaussian_cdf(mean, std, a)
-            elif a == float("-inf"):
-                prob_interval = gaussian_cdf(mean, std, b)
+            if lower == float("-inf"):
+                remaining_probability_mass = 1
             else:
-                prob_interval = gaussian_cdf(mean, std, b) - gaussian_cdf(mean, std, a)
+                remaining_probability_mass = 1 - gaussian_cdf(mean, std, lower)
+
+            flip_prob = (
+                gaussian_cdf(mean, std, upper) - gaussian_cdf(mean, std, lower)
+            ) / remaining_probability_mass
 
             # Set weights: true weight = probability of being in interval
-            self.set_weight(interval_node_name, prob_interval, 1.0)
-
-        # Create BDD nodes for equality at each threshold value
-        for threshold_val in sorted_thresholds:
-            if threshold_val in (float("-inf"), float("inf")):
-                continue
-            equality_node_name = self._get_eq_node_name(var, threshold_val)
-            self.bdd.declare(equality_node_name)
-
-            # Calculate PDF at threshold value
-            pdf_val = gaussian_pdf(mean, std, threshold_val)
-
-            # Set weights: true weight = PDF value, false weight = 1.0
-            self.set_weight(equality_node_name, pdf_val, 1.0)
+            self.set_weight(interval_node_name, flip_prob, 1.0 - flip_prob)
 
         return sorted_thresholds
 
-    def _compile_gaussian_observes_all_hold_clause(self):
-        clause = self.bdd.true
-        if not self._gaussian_observe_stack:
+    def get_gaussian_variable_inequality_expression(
+        self, var: int, inequality: str, val: float
+    ):
+        sorted_thresholds = (
+            [float("-inf")]
+            + sorted(self.truncations.get(var, set()))
+            + [
+                float("inf"),
+            ]
+        )
+        split_index = sorted_thresholds.index(val)
+        lower = sorted_thresholds[split_index - 1]
+        if inequality == "<=":
+            # The node representing (x <= val | x > lower) must be true, since this gates larger values
+            return self.bdd.var(self._get_interval_node_name(var, lower, val))
+        elif inequality == ">":
+            # Every node representing (x <= t | x > s) for t <= val must be false
+            clause = self.bdd.true
+            for i in range(split_index - 1):
+                lower = sorted_thresholds[i]
+                upper = sorted_thresholds[i + 1]
+                clause = clause & ~self.bdd.var(
+                    self._get_interval_node_name(var, lower, upper)
+                )
             return clause
+        else:
+            raise ValueError(f"Unexpected inequality: {inequality}")
 
-        # Collect all the values appear in observe equality/inequality statements
-        thresholds: dict[int, set[float]] = defaultdict(set)
-        for symbolic_value, _, val in self._gaussian_observe_stack:
-            if isinstance(symbolic_value, GaussianVariable):
-                thresholds[symbolic_value.var].add(val)
-            elif isinstance(symbolic_value, GaussianUnion):
-                for v in symbolic_value.values:
-                    thresholds[v.var].add(val)
-            else:
-                raise ValueError(f"Unexpected type: {type(symbolic_value)}")
+    def get_gaussian_variable_equality_expression(self, var: int, val: float):
+        sorted_thresholds = (
+            [float("-inf")]
+            + sorted(self.truncations.get(var, set()))
+            + [
+                float("inf"),
+            ]
+        )
+        bisect_index = bisect.bisect_left(sorted_thresholds, val)
+        lower, upper = (
+            sorted_thresholds[bisect_index - 1],
+            sorted_thresholds[bisect_index],
+        )
 
-        sorted_thresholds: dict[int, list[float]] = {}
-        for gv, threshold_set in thresholds.items():
-            sorted_thresholds[gv] = self._add_bdd_nodes_for_gaussian_variable(
-                gv, threshold_set
+        inequality_clause = self.bdd.true
+        if lower != float("-inf"):
+            inequality_clause = self.get_gaussian_variable_inequality_expression(
+                var, ">", lower
+            )
+        if upper != float("inf"):
+            inequality_clause = (
+                inequality_clause
+                & self.get_gaussian_variable_inequality_expression(var, "<=", upper)
             )
 
-        for symbolic_value, inequality, val in self._gaussian_observe_stack:
-            if isinstance(symbolic_value, GaussianVariable):
-                clause = clause & self._get_gaussian_variable_observe_clause(
-                    symbolic_value,
-                    inequality,
-                    val,
-                    sorted_thresholds[symbolic_value.var],
-                )
-            elif isinstance(symbolic_value, GaussianUnion):
-                clause = clause & self._get_gaussian_union_observe_clause(
-                    symbolic_value, inequality, val, sorted_thresholds
-                )
-            else:
-                raise ValueError(f"Unexpected type: {type(symbolic_value)}")
+        equality_node_name = self._get_eq_node_name(var, val, lower, upper)
+        self.bdd.declare(equality_node_name)
+        # Compute weight for equality node
+        # It is the density at val divided by the normalization constant for the interval
+        weight = gaussian_pdf(*self.gaussian_params[var], val) / (
+            gaussian_cdf(*self.gaussian_params[var], upper)
+            - gaussian_cdf(*self.gaussian_params[var], lower)
+        )
+        self.set_weight(equality_node_name, weight, 1.0)
+        self.bdd_equality_nodes[var].add(equality_node_name)
+        equality_clause = inequality_clause & self.bdd.var(equality_node_name)
+        return equality_clause, self.bdd.var(equality_node_name)
 
-        return clause
+    @property
+    def mutually_compatible_equalities(self):
+        mutually_compatible_equalities = self.bdd.true
+        for node_names in self.bdd_equality_nodes.values():
+            for node, other_node in itertools.combinations(node_names, 2):
+                # Ensure that only one equality node for this variable can be true at a time
+                mutually_compatible_equalities = mutually_compatible_equalities & ~(
+                    self.bdd.var(node) & self.bdd.var(other_node)
+                )
+        return mutually_compatible_equalities
 
     @property
     def observes_all_hold(self):
-        if self._gaussian_observes_all_hold is None:
-            self._gaussian_observes_all_hold = (
-                self._compile_gaussian_observes_all_hold_clause()
-            )
-        return self._observes_all_hold & self._gaussian_observes_all_hold
+        return self._observes_all_hold & self.mutually_compatible_equalities
 
     def next_flip(self):
         self.flips += 1
@@ -544,36 +403,15 @@ class Const(AExpr):
 
 
 @dataclass
-class TruncatedGaussian(AExpr):
+class Gaussian(AExpr):
     mean: float
     std: float
-    lower: float
-    upper: float
 
     def kc(self, env, state):
         var = state.next_gaussian()
-        state.set_gaussian_params(var, self.mean, self.std, self.lower, self.upper)
+        state.set_gaussian_params(var, self.mean, self.std)
+        state.add_bdd_nodes_for_gaussian_variable(var)
         return GaussianVariable(var)
-
-    def replace_gaussians(
-        self, env: dict[str, PExpr], state: GaussianVariableCounter
-    ) -> Any:
-        return self
-
-    def collect_real_truncation(
-        self, env: dict[str, PExpr], state: TruncationState
-    ) -> Any:
-        raise ValueError(
-            "TruncatedGaussian expressions should not appear in original expr"
-        )
-
-
-@dataclass
-class Gaussian(TruncatedGaussian):
-    mean: float
-    std: float
-    lower: float = field(default=float("-inf"), init=False)
-    upper: float = field(default=float("inf"), init=False)
 
     def collect_real_truncation(
         self, env: dict[str, PExpr], state: TruncationState
@@ -587,16 +425,6 @@ class Gaussian(TruncatedGaussian):
     ) -> Any:
         var = state.next_gaussian()
         return Var(get_gaussian_var_name(var))
-
-
-@dataclass
-class GatedGaussian(AExpr):
-    mean: float
-    std: float
-    truncations: list[float]
-
-    def kc(self, env, state):
-        raise NotImplementedError()
 
 
 @dataclass
@@ -738,7 +566,7 @@ class Observe(PExpr):
 @dataclass
 class ObserveReal(PExpr):
     symbolic_value: PExpr
-    inequality: Literal["<", ">", "="]
+    inequality: Literal["<=", ">", "="]
     val: float
 
     def kc(self, env, state: KCState):
@@ -746,9 +574,28 @@ class ObserveReal(PExpr):
         # We want something like score(density(symbolic_value, val)),
         #  where this density depends on which GaussianVariable symbolic_value
         symbolic_value = self.symbolic_value.kc(env, state)
-        state._gaussian_observe_stack.append(
-            (symbolic_value, self.inequality, self.val)
-        )
+        if isinstance(symbolic_value, GaussianVariable):
+            if self.inequality == "=":
+                clause, _ = state.get_gaussian_variable_equality_expression(
+                    symbolic_value.var, self.val
+                )
+            else:
+                clause = state.get_gaussian_variable_inequality_expression(
+                    symbolic_value.var, self.inequality, self.val
+                )
+        elif isinstance(symbolic_value, GaussianUnion):
+            if self.inequality == "=":
+                clause = state.get_gaussian_union_equality_expression(
+                    symbolic_value, self.val
+                )
+            else:
+                clause = state.get_gaussian_union_inequality_expression(
+                    symbolic_value, self.inequality, self.val
+                )
+        else:
+            raise ValueError(f"Unexpected type: {type(symbolic_value)}")
+
+        self.observes_all_hold = state._observes_all_hold & clause
         return state.bdd.true
 
     def collect_real_truncation(self, env, state):
@@ -779,8 +626,7 @@ class ObserveReal(PExpr):
 def run_kc(expr: PExpr):
     state = TruncationState()
     expr.collect_real_truncation({}, state)
-    expr = create_truncated_gaussian_vars(expr, state)
-    state = KCState()
+    state = KCState(state)
     bdd = expr.kc({}, state)
     unnormalized_count = model_count(
         state.bdd, bdd & state.observes_all_hold, state.weights

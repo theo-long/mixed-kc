@@ -146,7 +146,7 @@ p7 = Let(
     Gaussian(0, 1),
     Let(
         "_",
-        ObserveReal(Var("x"), "<", 1.0),
+        ObserveReal(Var("x"), "<=", 1.0),
         Let("_", ObserveReal(Var("x"), ">", 0.0), Flip(0.5)),
     ),
 )
@@ -163,7 +163,7 @@ p8 = Let(
         IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
         Let(
             "_",
-            ObserveReal(Var("x"), "<", 1.0),  # Observe that x < 1.0
+            ObserveReal(Var("x"), "<=", 1.0),  # Observe that x <= 1.0
             Let("_", ObserveReal(Var("x"), ">", 0.0), Var("b")),  # Observe that x > 0.0
         ),
     ),
@@ -184,8 +184,8 @@ p9 = Let(
         IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
         Let(
             "_",
-            ObserveReal(Var("x"), ">", 1.0),  # Observe that x < 1.0
-            Let("_", ObserveReal(Var("x"), "<", 0.0), Var("b")),  # Observe that x > 0.0
+            ObserveReal(Var("x"), ">", 1.0),  # Observe that x <= 1.0
+            Let("_", ObserveReal(Var("x"), "<=", 0.0), Var("b")),  # Observe that x > 0.0
         ),
     ),
 )
