@@ -1,14 +1,15 @@
 from kc.prob import (
+    Const,
     Flip,
     Gaussian,
     IfThenElse,
     Let,
     ObserveReal,
+    ObserveRealInequality,
     Var,
     gaussian_cdf,
     gaussian_pdf,
     run_kc,
-    Const,
 )
 
 # Flip a coin, choose between two different Gaussians, observe the result
@@ -22,7 +23,7 @@ p1 = Let(
             Gaussian(0, 1),
             Gaussian(0, 2),
         ),
-        Let("_", ObserveReal(Var("x"), "=", 1.0), Var("b")),
+        Let("_", ObserveReal(Var("x"), 1.0), Var("b")),
     ),
 )
 # Expected probability of b is the ratio of the density of x=1.0 under N(0, 1) to the sum of the densities of x=1.0 under N(0, 1) and N(0, 2)
@@ -40,8 +41,8 @@ p2 = Let(
         IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 2)),
         Let(
             "_",
-            ObserveReal(Var("x"), "=", 1.0),
-            Let("_", ObserveReal(Var("x"), "=", 1.0), Var("b")),
+            ObserveReal(Var("x"), 1.0),
+            Let("_", ObserveReal(Var("x"), 1.0), Var("b")),
         ),
     ),
 )
@@ -57,8 +58,8 @@ p3 = Let(
         IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 2)),
         Let(
             "_",
-            ObserveReal(Var("x"), "=", 1.0),
-            Let("_", ObserveReal(Var("x"), "=", 0.1), Var("b")),
+            ObserveReal(Var("x"), 1.0),
+            Let("_", ObserveReal(Var("x"), 0.1), Var("b")),
         ),
     ),
 )
@@ -71,14 +72,14 @@ p4 = Let(
     Gaussian(0, 1),
     Let(
         "_",
-        ObserveReal(Var("x"), "=", 0.5),
+        ObserveReal(Var("x"), 0.5),
         Let(
             "b",
             Flip(0.5),
             Let(
                 "y",
                 IfThenElse(Var("b"), Var("x"), Gaussian(0, 1)),
-                Let("_", ObserveReal(Var("y"), "=", 0.5), Var("b")),
+                Let("_", ObserveReal(Var("y"), 0.5), Var("b")),
             ),
         ),
     ),
@@ -101,11 +102,11 @@ p5 = Let(
             IfThenElse(Var("b1"), Gaussian(0, 1), Gaussian(0, 2)),
             Let(
                 "_",
-                ObserveReal(Var("x"), "=", 1.0),
+                ObserveReal(Var("x"), 1.0),
                 Let(
                     "y",
                     IfThenElse(Var("b2"), Var("x"), Gaussian(0, 10)),
-                    Let("_", ObserveReal(Var("y"), "=", 1.0), b1_and_b2),
+                    Let("_", ObserveReal(Var("y"), 1.0), b1_and_b2),
                 ),
             ),
         ),
@@ -126,11 +127,11 @@ p6 = Let(
             IfThenElse(Var("b1"), Gaussian(0, 1), Gaussian(0, 2)),
             Let(
                 "_",
-                ObserveReal(Var("x"), "=", 1.0),
+                ObserveReal(Var("x"), 1.0),
                 Let(
                     "y",
                     IfThenElse(Var("b2"), Var("x"), Gaussian(0, 10)),
-                    Let("_", ObserveReal(Var("y"), "=", 2.0), b1_and_b2),
+                    Let("_", ObserveReal(Var("y"), 2.0), b1_and_b2),
                 ),
             ),
         ),
@@ -146,8 +147,8 @@ p7 = Let(
     Gaussian(0, 1),
     Let(
         "_",
-        ObserveReal(Var("x"), "<=", 1.0),
-        Let("_", ObserveReal(Var("x"), ">", 0.0), Flip(0.5)),
+        ObserveRealInequality(Var("x"), "<=", 1.0),
+        Let("_", ObserveRealInequality(Var("x"), ">", 0.0), Flip(0.5)),
     ),
 )
 expected_p7 = 0.5
@@ -163,8 +164,10 @@ p8 = Let(
         IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
         Let(
             "_",
-            ObserveReal(Var("x"), "<=", 1.0),  # Observe that x <= 1.0
-            Let("_", ObserveReal(Var("x"), ">", 0.0), Var("b")),  # Observe that x > 0.0
+            ObserveRealInequality(Var("x"), "<=", 1.0),  # Observe that x <= 1.0
+            Let(
+                "_", ObserveRealInequality(Var("x"), ">", 0.0), Var("b")
+            ),  # Observe that x > 0.0
         ),
     ),
 )
@@ -184,9 +187,9 @@ p9 = Let(
         IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
         Let(
             "_",
-            ObserveReal(Var("x"), ">", 1.0),  # Observe that x <= 1.0
+            ObserveRealInequality(Var("x"), ">", 1.0),  # Observe that x <= 1.0
             Let(
-                "_", ObserveReal(Var("x"), "<=", 0.0), Var("b")
+                "_", ObserveRealInequality(Var("x"), "<=", 0.0), Var("b")
             ),  # Observe that x <= 0.0
         ),
     ),
@@ -206,8 +209,8 @@ p10 = Let(
         ),
         Let(
             "_",
-            ObserveReal(Var("x"), "=", 1.0),
-            Let("_", ObserveReal(Var("x"), ">", 0.42), Var("b")),
+            ObserveReal(Var("x"), 1.0),
+            Let("_", ObserveRealInequality(Var("x"), ">", 0.42), Var("b")),
         ),
     ),
 )
@@ -233,11 +236,11 @@ p11 = Let(
                 ),
                 Let(
                     "_",
-                    ObserveReal(Var("x"), "=", 1.0),
+                    ObserveReal(Var("x"), 1.0),
                     Let(
                         "_",
-                        ObserveReal(Var("g1"), "=", 1.0),
-                        Let("_", ObserveReal(Var("g2"), "=", 1.0), Var("b")),
+                        ObserveReal(Var("g1"), 1.0),
+                        Let("_", ObserveReal(Var("g2"), 1.0), Var("b")),
                     ),
                 ),
             ),
@@ -264,7 +267,7 @@ p12 = Let(
             Gaussian(0, 1),
             Let(
                 "_",
-                ObserveReal(Var("g1"), ">", 0.0),
+                ObserveRealInequality(Var("g1"), ">", 0.0),
                 Let(
                     "g1 or g2",
                     IfThenElse(
@@ -274,7 +277,7 @@ p12 = Let(
                     ),
                     Let(
                         "_",
-                        ObserveReal(Var("g1 or g2"), ">", 0.0),
+                        ObserveRealInequality(Var("g1 or g2"), ">", 0.0),
                         Let(
                             "g1 or g2 or g3",
                             IfThenElse(
@@ -284,7 +287,7 @@ p12 = Let(
                             ),
                             Let(
                                 "_",
-                                ObserveReal(Var("g1 or g2 or g3"), ">", 1.0),
+                                ObserveRealInequality(Var("g1 or g2 or g3"), ">", 1.0),
                                 flip_1_and_flip_2,
                             ),
                         ),

@@ -520,7 +520,6 @@ class Observe(PExpr):
 @dataclass
 class ObserveReal(PExpr):
     symbolic_value: PExpr
-    inequality: Literal["<=", ">", "="]
     val: float
 
     def kc(self, env, state: KCState):
@@ -529,23 +528,13 @@ class ObserveReal(PExpr):
         #  where this density depends on which GaussianVariable symbolic_value
         symbolic_value = self.symbolic_value.kc(env, state)
         if isinstance(symbolic_value, GaussianVariable):
-            if self.inequality == "=":
-                clause, _ = state.get_gaussian_variable_equality_expression(
-                    symbolic_value.var, self.val
-                )
-            else:
-                clause = state.get_gaussian_variable_inequality_expression(
-                    symbolic_value.var, self.inequality, self.val
-                )
+            clause, _ = state.get_gaussian_variable_equality_expression(
+                symbolic_value.var, self.val
+            )
         elif isinstance(symbolic_value, GaussianUnion):
-            if self.inequality == "=":
-                clause = state.get_gaussian_union_equality_expression(
-                    symbolic_value, self.val
-                )
-            else:
-                clause = state.get_gaussian_union_inequality_expression(
-                    symbolic_value, self.inequality, self.val
-                )
+            clause = state.get_gaussian_union_equality_expression(
+                symbolic_value, self.val
+            )
         else:
             raise ValueError(f"Unexpected type: {type(symbolic_value)}")
 
@@ -553,9 +542,33 @@ class ObserveReal(PExpr):
         return state.bdd.true
 
     def collect_real_truncation(self, env, state):
-        if self.inequality == "=":
-            return
+        return
 
+
+@dataclass
+class ObserveRealInequality(PExpr):
+    symbolic_value: PExpr
+    inequality: Literal["<=", ">"]
+    val: float
+
+    def kc(self, env, state: KCState):
+        # Modify the self.observes_all_hold formula in some way...
+        symbolic_value = self.symbolic_value.kc(env, state)
+        if isinstance(symbolic_value, GaussianVariable):
+            clause = state.get_gaussian_variable_inequality_expression(
+                symbolic_value.var, self.inequality, self.val
+            )
+        elif isinstance(symbolic_value, GaussianUnion):
+            clause = state.get_gaussian_union_inequality_expression(
+                symbolic_value, self.inequality, self.val
+            )
+        else:
+            raise ValueError(f"Unexpected type: {type(symbolic_value)}")
+
+        state._observes_all_hold = state._observes_all_hold & clause
+        return state.bdd.true
+
+    def collect_real_truncation(self, env, state):
         symbolic_value = self.symbolic_value.collect_real_truncation(env, state)
 
         if isinstance(symbolic_value, GaussianVariable):
