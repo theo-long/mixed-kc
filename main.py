@@ -370,6 +370,145 @@ p14 = Let(
 expected_p14 = expected_p13
 
 
+# We have 4 gaussians in a nested if-then-else
+# We observe that pairs (1,2) and (2,3) and (3,4) and (4,1) are all equal to 1.0
+def quad_gaussian(y_obs, output):
+    return Let(
+        "b0",
+        Flip(0.5),
+        Let(
+            "b1",
+            Flip(0.5),
+            Let(
+                "b2",
+                Flip(0.5),
+                Let(
+                    "b3",
+                    Flip(0.5),
+                    Let(
+                        "b4",
+                        Flip(0.5),
+                        Let(
+                            "g1",
+                            Gaussian(0, 1),
+                            Let(
+                                "g2",
+                                Gaussian(0, 1),
+                                Let(
+                                    "g3",
+                                    Gaussian(0, 1),
+                                    Let(
+                                        "g4",
+                                        Gaussian(0, 1),
+                                        Let(
+                                            "x1",
+                                            IfThenElse(
+                                                Var("b1"),
+                                                Var("g1"),
+                                                Var("g2"),
+                                            ),
+                                            Let(
+                                                "x2",
+                                                IfThenElse(
+                                                    Var("b2"),
+                                                    Var("g2"),
+                                                    Var("g3"),
+                                                ),
+                                                Let(
+                                                    "x3",
+                                                    IfThenElse(
+                                                        Var("b3"),
+                                                        Var("g3"),
+                                                        Var("g4"),
+                                                    ),
+                                                    Let(
+                                                        "x4",
+                                                        IfThenElse(
+                                                            Var("b4"),
+                                                            Var("g4"),
+                                                            Var("g1"),
+                                                        ),
+                                                        Let(
+                                                            "y",
+                                                            IfThenElse(
+                                                                Var("b0"),
+                                                                Var("x1"),
+                                                                Var("x3"),
+                                                            ),
+                                                            Let(
+                                                                "_",
+                                                                ObserveReal(
+                                                                    Var("x1"), 1.0
+                                                                ),
+                                                                Let(
+                                                                    "_",
+                                                                    ObserveReal(
+                                                                        Var("x2"), 1.0
+                                                                    ),
+                                                                    Let(
+                                                                        "_",
+                                                                        ObserveReal(
+                                                                            Var("x3"),
+                                                                            1.0,
+                                                                        ),
+                                                                        Let(
+                                                                            "_",
+                                                                            ObserveReal(
+                                                                                Var(
+                                                                                    "x4"
+                                                                                ),
+                                                                                1.0,
+                                                                            ),
+                                                                            Let(
+                                                                                "_",
+                                                                                ObserveReal(
+                                                                                    Var(
+                                                                                        "y"
+                                                                                    ),
+                                                                                    y_obs,
+                                                                                ),
+                                                                                output,
+                                                                            ),
+                                                                        ),
+                                                                    ),
+                                                                ),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+# Observe that y = 1.0, x1 = (g1 or g2) = 1.0, x2 = (g2 or g3) = 1.0, x3 = (g3 or g4) = 1.0, x4 = (g4 or g1) = 1.0
+# In this case, we must have g1 = 1, g3 = 1, g2 != 1, g4 != 1 or g2 = 1, g4 = 1, g1 != 1, g3 != 1
+# i.e. either only (g1, g3) are 1.0 or only (g2, g4) are 1.0
+# since any of the other gaussians also being 1.0 would have measure 0.
+# The case (g1, g3) are 1.0 happens when b1 = True, b3 = True
+# The case (g2, g4) are 1.0 happens when b1 = False, b3 = False
+b1_and_b3 = IfThenElse(
+    Var("b1"),
+    Var("b3"),
+    Const(False),
+)
+p15 = quad_gaussian(1.0, b1_and_b3)
+expected_p15 = 0.5
+
+# b2 and b4 can be anything in both cases
+p16 = quad_gaussian(1.0, Var("b2"))
+p17 = quad_gaussian(1.0, Var("b4"))
+expected_p16 = 0.5
+expected_p17 = 0.5
+
+
 def main():
     print("Hello from mixed-kc!")
     errors = 0
@@ -389,6 +528,9 @@ def main():
         ("p12", p12, expected_p12),
         ("p13", p13, expected_p13),
         ("p14", p14, expected_p14),
+        ("p15", p15, expected_p15),
+        ("p16", p16, expected_p16),
+        ("p17", p17, expected_p17),
     ]:
         count += 1
         print(f"--- {name} ---")
