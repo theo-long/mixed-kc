@@ -1,3 +1,4 @@
+from math import exp
 from kc.prob import (
     Const,
     Flip,
@@ -216,7 +217,7 @@ p10 = Let(
 )
 expected_p10 = expected_p1  # Should be the same as p1 since the inequality is redundant given the equality
 
-# Observe that both Gaussians in a Gaussian union are equal to 0.5, then observe the union again
+# Observe that both Gaussians in a Gaussian union are equal to 1.0, then observe the union again
 # This is to test that observing equalities for all components of a Gaussian union works correctly
 p11 = Let(
     "b",
@@ -303,6 +304,70 @@ p12 = Let(
 # So expected prob is (2/3) ** 2
 expected_p12 = (2 / 3) ** 2
 
+# Observe that one Gaussian in a Gaussian union is equal to 1.0, then observe the union is equal to 2.0
+p13 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 1),
+            Let(
+                "x",
+                IfThenElse(
+                    Var("b"),
+                    Var("g1"),
+                    Var("g2"),
+                ),
+                Let(
+                    "_",
+                    ObserveReal(Var("x"), 2.0),
+                    Let(
+                        "_",
+                        ObserveReal(Var("g2"), 1.0),
+                        Var("b"),
+                    ),
+                ),
+            ),
+        ),
+    ),
+)
+expected_p13 = 1.0
+
+# Same as above but we also observe that the other Gaussian is equal to 2.0, which shouldn't change anything
+p14 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 1),
+            Let(
+                "x",
+                IfThenElse(
+                    Var("b"),
+                    Var("g1"),
+                    Var("g2"),
+                ),
+                Let(
+                    "_",
+                    ObserveReal(Var("x"), 2.0),
+                    Let(
+                        "_",
+                        ObserveReal(Var("g2"), 1.0),
+                        Let("_", ObserveReal(Var("g1"), 2.0), Var("b")),
+                    ),
+                ),
+            ),
+        ),
+    ),
+)
+expected_p14 = expected_p13
+
 
 def main():
     print("Hello from mixed-kc!")
@@ -321,6 +386,8 @@ def main():
         ("p10", p10, expected_p10),
         ("p11", p11, expected_p11),
         ("p12", p12, expected_p12),
+        ("p13", p13, expected_p13),
+        ("p14", p14, expected_p14),
     ]:
         count += 1
         print(f"--- {name} ---")
