@@ -175,7 +175,7 @@ expected_p8 = (gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)) / (
     - gaussian_cdf(0.0, 10.0, 0.0)
 )
 
-# Observe that a Gaussian union is < 0. and > 1.0
+# Observe that a Gaussian union is <= 0. and > 1.0
 p9 = Let(
     "b",
     Flip(0.5),
@@ -185,7 +185,9 @@ p9 = Let(
         Let(
             "_",
             ObserveReal(Var("x"), ">", 1.0),  # Observe that x <= 1.0
-            Let("_", ObserveReal(Var("x"), "<=", 0.0), Var("b")),  # Observe that x > 0.0
+            Let(
+                "_", ObserveReal(Var("x"), "<=", 0.0), Var("b")
+            ),  # Observe that x <= 0.0
         ),
     ),
 )
