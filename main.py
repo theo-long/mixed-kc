@@ -248,7 +248,8 @@ p11 = Let(
         ),
     ),
 )
-expected_p11 = gaussian_pdf(0.0, 1.0, 1.0) * gaussian_pdf(0.0, 2.0, 1.0)
+# Since we observe both g1 and g2 to be 1.0, observing x=1.0 is redundant - observing b is 50/50
+expected_p11 = 0.5
 
 # We have IID Gaussians in a nested if-then-else
 # We observe that the first is > 0, that the combination of the first two is > 0, and that the whole thing is > 0

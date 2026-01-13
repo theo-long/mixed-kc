@@ -1,15 +1,14 @@
-from ast import Not
 import bisect
 import itertools
 import operator
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import reduce
 from typing import Any, Literal
 
 import dd.autoref as _bdd
-from numpy import sort
+from numpy.polynomial import Polynomial
 from scipy.stats import norm
 
 from kc.model_count import model_count
@@ -52,7 +51,7 @@ class KCState(GaussianVariableCounter):
     def __init__(self, truncation_state: TruncationState):
         self.bdd = _bdd.BDD()
         self.flips = 0
-        self.weights = {}
+        self.weights: dict[int, tuple[Polynomial, Polynomial]] = {}
         self._observes_all_hold = self.bdd.true
         self.truncations = truncation_state.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
@@ -62,6 +61,15 @@ class KCState(GaussianVariableCounter):
         ] = []
         self._gaussian_observes_all_hold = None
         super().__init__()
+
+    def _get_gaussian_pair_eq_node_name(self, var: int, other: int):
+        return f"_g{var}=g{other}"
+
+    def get_gaussian_variable_pair_equality_expression(self, var: int, other: int):
+        node = self._get_gaussian_pair_eq_node_name(var, other)
+        self.bdd.declare(node)
+        self.set_weight(node, Polynomial([0.0, 1.0]), 1.0)
+        return self.bdd.var(node)
 
     def get_gaussian_union_equality_expression(
         self,
@@ -85,7 +93,12 @@ class KCState(GaussianVariableCounter):
             # This is to ensure that the density is only counted once
             for j in range(len(symbolic_value.values)):
                 if i != j:
-                    clause = clause & ~equality_nodes[j]
+                    clause = clause & (
+                        ~equality_nodes[j]
+                        | self.get_gaussian_variable_pair_equality_expression(
+                            symbolic_value.values[i].var, symbolic_value.values[j].var
+                        )
+                    )
             # Add formula guarding this value to the clause
             clause = clause & symbolic_value.formulae[i]
             guarded_clause = guarded_clause | clause
@@ -152,7 +165,7 @@ class KCState(GaussianVariableCounter):
         return sorted_thresholds
 
     def get_gaussian_variable_inequality_expression(
-        self, var: int, inequality: str, val: float
+        self, var: int, inequality: Literal["<=", ">"], val: float
     ):
         sorted_thresholds = (
             [float("-inf")]
@@ -237,7 +250,16 @@ class KCState(GaussianVariableCounter):
         self.flips += 1
         return self.flips
 
-    def set_weight(self, var, pos_weight, neg_weight):
+    def set_weight(
+        self,
+        var,
+        pos_weight: int | float | Polynomial,
+        neg_weight: int | float | Polynomial,
+    ):
+        if not isinstance(pos_weight, Polynomial):
+            pos_weight = Polynomial([pos_weight])
+        if not isinstance(neg_weight, Polynomial):
+            neg_weight = Polynomial([neg_weight])
         self.weights[var] = (pos_weight, neg_weight)
 
 

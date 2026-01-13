@@ -1,4 +1,6 @@
 import dd.autoref as _bdd
+from numpy.polynomial import Polynomial
+import numpy as np
 
 
 def is_negated(u: _bdd.Function) -> bool:
@@ -8,8 +10,8 @@ def is_negated(u: _bdd.Function) -> bool:
 def _model_count(
     bdd: _bdd.BDD,
     u: _bdd.Function,
-    count: dict[int, float],
-    weights: dict[int, tuple[float, float]],
+    count: dict[int, Polynomial],
+    weights: dict[int, tuple[Polynomial, Polynomial]],
 ):
     if u in count:
         return count[u]
@@ -26,9 +28,14 @@ def _model_count(
 
 
 def model_count(
-    bdd: _bdd.BDD, u: _bdd.Function, weights: dict[int, tuple[float, float]]
+    bdd: _bdd.BDD, u: _bdd.Function, weights: dict[int, tuple[Polynomial, Polynomial]]
 ):
     count = dict()
-    count[bdd.true] = 1
-    count[bdd.false] = 0
-    return _model_count(bdd, u, count, weights)
+    count[bdd.true] = Polynomial([1])
+    count[bdd.false] = Polynomial([0])
+    count_polynomial = _model_count(bdd, u, count, weights).coef
+    for deg in range(len(count_polynomial)):
+        val = count_polynomial[deg]
+        if val > 0:
+            return float(val)
+    return 0.0
