@@ -252,7 +252,7 @@ p11 = Let(
 expected_p11 = 0.5
 
 # We have IID Gaussians in a nested if-then-else
-# We observe that the first is > 0, that the combination of the first two is > 0, and that the whole thing is > 0
+# We observe that the first is > 0, that the combination of the first two is > 0, and that the whole thing is > 1.0
 flip_1_and_flip_2 = IfThenElse(
     Var("flip_1"),
     Var("flip_2"),
