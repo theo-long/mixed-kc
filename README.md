@@ -1,3 +1,7 @@
+# Instructions
+
+This project uses `uv`. To run the test programs, first install `uv` then run `uv run main.py`.
+
 # TODO
 - add some documentation and flags for turning features on/off
 - add ability to reference inequalities as Boolean variables, and then inequality observes are just handled as usual boolean observes
