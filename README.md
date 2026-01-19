@@ -221,8 +221,7 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 # Misc. Notes
 
 ## TODO
-- add some documentation and flags for turning features on/off
-- add ability to reference inequalities as Boolean variables, and then inequality observes are just handled as usual boolean observes
+- add flags for turning features on/off
 
 ## Questions
 - Are we actually using the BDD library anywhere for WMC, or just to construct BDD?
