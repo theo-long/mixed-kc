@@ -6,7 +6,8 @@ from kc.prob import (
     IfThenElse,
     Let,
     ObserveReal,
-    ObserveRealInequality,
+    Observe,
+    Inequality,
     Var,
     gaussian_cdf,
     gaussian_pdf,
@@ -148,8 +149,8 @@ p7 = Let(
     Gaussian(0, 1),
     Let(
         "_",
-        ObserveRealInequality(Var("x"), "<=", 1.0),
-        Let("_", ObserveRealInequality(Var("x"), ">", 0.0), Flip(0.5)),
+        Observe(Inequality(Var("x"), "<=", 1.0)),
+        Let("_", Observe(Inequality(Var("x"), ">", 0.0)), Flip(0.5)),
     ),
 )
 expected_p7 = 0.5
@@ -165,9 +166,9 @@ p8 = Let(
         IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
         Let(
             "_",
-            ObserveRealInequality(Var("x"), "<=", 1.0),  # Observe that x <= 1.0
+            Observe(Inequality(Var("x"), "<=", 1.0)),  # Observe that x <= 1.0
             Let(
-                "_", ObserveRealInequality(Var("x"), ">", 0.0), Var("b")
+                "_", Observe(Inequality(Var("x"), ">", 0.0)), Var("b")
             ),  # Observe that x > 0.0
         ),
     ),
@@ -188,9 +189,9 @@ p9 = Let(
         IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
         Let(
             "_",
-            ObserveRealInequality(Var("x"), ">", 1.0),  # Observe that x <= 1.0
+            Observe(Inequality(Var("x"), ">", 1.0)),  # Observe that x <= 1.0
             Let(
-                "_", ObserveRealInequality(Var("x"), "<=", 0.0), Var("b")
+                "_", Observe(Inequality(Var("x"), "<=", 0.0)), Var("b")
             ),  # Observe that x <= 0.0
         ),
     ),
@@ -211,7 +212,7 @@ p10 = Let(
         Let(
             "_",
             ObserveReal(Var("x"), 1.0),
-            Let("_", ObserveRealInequality(Var("x"), ">", 0.42), Var("b")),
+            Let("_", Observe(Inequality(Var("x"), ">", 0.42)), Var("b")),
         ),
     ),
 )
@@ -269,7 +270,7 @@ p12 = Let(
             Gaussian(0, 1),
             Let(
                 "_",
-                ObserveRealInequality(Var("g1"), ">", 0.0),
+                Observe(Inequality(Var("g1"), ">", 0.0)),
                 Let(
                     "g1 or g2",
                     IfThenElse(
@@ -279,7 +280,7 @@ p12 = Let(
                     ),
                     Let(
                         "_",
-                        ObserveRealInequality(Var("g1 or g2"), ">", 0.0),
+                        Observe(Inequality(Var("g1 or g2"), ">", 0.0)),
                         Let(
                             "g1 or g2 or g3",
                             IfThenElse(
@@ -289,7 +290,7 @@ p12 = Let(
                             ),
                             Let(
                                 "_",
-                                ObserveRealInequality(Var("g1 or g2 or g3"), ">", 1.0),
+                                Observe(Inequality(Var("g1 or g2 or g3"), ">", 1.0)),
                                 flip_1_and_flip_2,
                             ),
                         ),
@@ -487,6 +488,7 @@ def quad_gaussian(y_obs, output):
             ),
         ),
     )
+
 
 # Observe that y = 1.0, x1 = (g1 or g2) = 1.0, x2 = (g2 or g3) = 1.0, x3 = (g3 or g4) = 1.0, x4 = (g4 or g1) = 1.0
 # In this case, we must have g1 = 1, g3 = 1, g2 != 1, g4 != 1 or g2 = 1, g4 = 1, g1 != 1, g3 != 1

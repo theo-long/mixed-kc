@@ -568,13 +568,12 @@ class ObserveReal(PExpr):
 
 
 @dataclass
-class ObserveRealInequality(PExpr):
+class Inequality(PExpr):
     symbolic_value: PExpr
     inequality: Literal["<=", ">"]
     val: float
 
     def kc(self, env, state: KCState):
-        # Modify the self.observes_all_hold formula in some way...
         symbolic_value = self.symbolic_value.kc(env, state)
         if isinstance(symbolic_value, GaussianVariable):
             clause = state.get_gaussian_variable_inequality_expression(
@@ -585,10 +584,8 @@ class ObserveRealInequality(PExpr):
                 symbolic_value, self.inequality, self.val
             )
         else:
-            raise ValueError(f"Unexpected type: {type(symbolic_value)}")
-
-        state._observes_all_hold = state._observes_all_hold & clause
-        return state.bdd.true
+            raise TypeError(f"Unexpected type: {type(symbolic_value)}")
+        return clause
 
     def collect_real_truncation(self, env, state):
         symbolic_value = self.symbolic_value.collect_real_truncation(env, state)
