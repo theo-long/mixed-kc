@@ -222,6 +222,7 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 
 ## TODO
 - add flags for turning features on/off
+- add affine transformations of Gaussians
 
 ## Questions
 - Are we actually using the BDD library anywhere for WMC, or just to construct BDD?
