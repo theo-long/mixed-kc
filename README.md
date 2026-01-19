@@ -6,7 +6,13 @@ This project uses `uv`. To run the test programs, first install `uv` then run `u
 
 ## Implementation of Gaussian Variable equality observes
 
+There are two cases that we need to handle:
+1) Directly observing a single Gaussian Variable
+2) Observing some 'union' of Gaussian Variables (i.e. a nested `IfThenElse` with Gaussian branches)
 
+For case 1, we create a new node in the BDD representing the event `g_i = val` where `g_i` is the Gaussian variable and `val` is the observed value, and we add this node to our `observes_all_hold` clause. The true weight of this node is the likelihood i.e. the value of the density of `g_i` at `val`, which ensures that the weight of the `observes_all_hold` clause represents the marginal likelihood of the observed data. The false weight is `1.0` for reasons specified in the paragraph below.
+
+For case 2, we have a union of Gaussian variables, represented by a set of gaussian variables each paired with a boolean formula which represents the flip assignments under which the union (a series of nested `IfThenElse`s) evaluates to that variable. Similarly to case 1, we create a BDD node `g_i = val` with the same true/false weights (likelihood, 1.0). However, we __AND__ each BDD node with a guard clause which is the associated boolean formula. We also __AND__ `g_i = val` with clauses of the form `~(g_j = val)` for `j != i` since in the case where the Gaussian union evalutes to `g_i` and we observe it we *do not* want to score this outcome using the weight for `g_j = val`. This is also why we set the false weight to `1.0` for these nodes, since we only want to score using the value of `g_i`. Note that this leads to some intricacies in handling multiple overlapping observes, discussed in the following section.
 
 ### Handling multiple interacting equality observes
 
