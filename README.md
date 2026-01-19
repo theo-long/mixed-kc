@@ -6,13 +6,66 @@ This project uses `uv`. To run the test programs, first install `uv` then run `u
 
 ## Implementation of Gaussian Variable equality observes
 
+
+
+### Handling multiple interacting equality observes
+
+There are cases where we might observe multiple Gaussian variable equality statements, either of the same Gaussian variable, or of Gaussian Unions which reference the same Gaussian variables.
+
+The first case is easier - we add a 'mutual compatibility' condition which ensures that no two BDD nodes of the form `g1 = 1.0` and `g1 = 2.0` are both true, i.e. we cannot have any pairwise incompatible equalities both being true.
+
+The second case is more complicated. Consider the situation where we observe a first Gaussian equal to 1.0, then observe a union of that Gaussian and another being equal to 1.0 as well:
+```
+Let(
+    "g1",
+    Gaussian(0, 1),
+    Let(
+        "g1 or g2",
+        IfThenElse(
+            Flip(0.5),
+            Var("g1"),
+            Gaussian(0, 1),
+        ),
+        Let(
+            "_",
+            ObserveReal(Var("g1"), 1.0),
+            Let(
+                "_",
+                ObserveReal(Var("g1 or g2"), 1.0),
+                ...
+            )
+        )
+    )   
+)
+```
+In this case there are two possible 'explanations': `g1` and `g2` are *both* equal to 1.0 and the `Flip(0.5)` chooses the second branch of the `IfThenElse`, or only `g1` is equal to 1.0 and the first branch is chosen. Under the density $P(\cdot | g_1 = 1.0)$, the first event has measure `0`, while the second event has measure $1$, therefore with probability $1.0$ we are in the second situation. 
+
+To ensure that this is correctly handled in the WMC, when observing a Gaussian union, each score node of the form `g_i = val` is also __AND__ ed with the __NOT__ of the other nodes `~(g_j = val)` in that union, which effectively says 'if we observe some union is `= val`, then *exactly one* of the variables in this union is equal to  `val`.
+
+This introduces two wrinkles: first, we do not want the statement `~(g_j = val)` to change the weight of the weighted models in the WMC, since the score node `g_i = val` already captures the appropriate weight. This is done by assigning a weight of `1.0` to the false branch of each score node.
+
+The second is that this excludes explanations that may have measure 0 but are still forced by other observe statements. If our previous example also had a third `ObserveReal(Var("g2"), 1.0)` statement, the fact that observing equalities of unions forces *exactly one* of the branches to be equal to a particular value would mean there are no satisfying assignments for our BDD!
+
+The solution is to add a second type of equality node representing events of the form `g_i = g_j`, so when observing a Gaussian Union each individual branch condition looks like:
+```
+(g_i = val) & (~(g_j = val) | (g_i = g_j)) # i != j
+```
+
+What weights should the $(g_i = g_j)$ node have? It is a measure 0 event under the conditional density $P(\cdot | g_i = \text{val})$, so we could assign it true/false weights of $(0., 1.0)$, but this would not change the situation since now all models with this node set to true will have weight 0. Instead, we want to give this some 'infinitesimal' weight $\eps$ which is strictly smaller than any real-valued weight, but is not 0. Put differently, we should strictly prefer explanations of our observe statements which do not require `g_i = g_j` (since these have non-zero measure under $P(\cdot | g_i = \text{val})$). However, if we are 'forced' to accept the conclusion that `g_i = g_j`, either because we observe this directly, or have a large enough number of overlapping observes that some statement `g_i = g_j` is true, then we should instead score outcomes under the conditional measure $P(\cdot | g_i = \text{val}, g_j = \text{val})$.
+
+It turns out that the structure of these 'infinitesimal weights' is exactly like polynomials in the variable $\eps$, where we reinterpret all of our usual real-valued weights $w$ as constant-valued polynomials in $R[\eps]$, and we assign the 'true' weight $\eps$ to the event `g_i = g_j` and the false weight $1.0$ (for the same reason as before where we don't want to multiply extra terms into the weight when it is false). This means that the final weight will be some polynomial $f$ of the form $a + b\eps + c\eps^2 ...$, where the coefficient of the $\eps^k$ term represent the unnormalized density under the conditional measure where $k$ different statements of the form `g_i = g_j` are true. We then take the first non-zero coefficient of $f$ as our actual weight, which captures the fact that we strictly prefer evaluating under conditional densities where fewer statements `g_i = g_j` are true. 
+
+For an example of a program where we will end up having a weight with higher powers of $\eps$, consider $n$ Gaussian variables, where we observe that every pair (in the form of an `IfThenElse`) is equal to $1.0$. This implies that at least $n - 1$ of them must be equal to $1.0$ (otherwise some pair would not be equal to $1.0$), however we strictly prefer this to the case where all $n$ are equal to $1.0$. In this case resulting polynomial weights will have both $\epsilon^{n-1}$ and $\epsilon^{n}$ terms, with all lower-order terms equal to 0, and the $\epsilon^{n-1}$ coefficient will be the final weight.
+
 ## Implementation of Gaussian inequality observes
 
 To handle inequalities which reference Gaussian variables (or composed IfThenElse statements with Gaussian variables in the body), we must update our KC in a few ways:
 1. We must add nodes representing the events (some_gaussian >= some_value), with the weights given by evaluating the gaussian CDF.
 2. We must update the weights of the score nodes used for Gaussian equality observes to handle the fact that (some_gaussian >= 0) is *not independent* of (some_gaussian == 1.)
 
-The way we do this is sing a program transformation that transforms Gaussian variables into unions of *truncated* Gaussian variables.
+The way we do this is using a program transformation that transforms Gaussian variables into unions of *truncated* Gaussian variables.
+
+Note that in practice our implementation does not actually rewrite the `PExpr` into another `PExpr` as outlined below. Instead this 'program transformation' is implemented within the logic of the KC step, but the algorithm is conceptually the same as what is described below.
 
 ### Single Gaussian Variable Case
 Let's first consider the case where we have a single Gaussian variable, with two inequality observes, and a single equality observe:
@@ -171,6 +224,7 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 ## Ideas
 - Can we allow flip params to be symbolic values and perform inference on them? Point is that we can use KC to compile a formula for P(outcome | flip_thetas) which is some rational function in flip_thetas (since it is P(outcome) / P(observes all hold), both of which are polynomials in flip_thetas).
 - Adding in continuous latents that are conjugate
+- Can we allow for inequalties between two different Gaussian variables e.g. g1 <= g2? Or are we only able to do g1 <= val?
 
 ## Things to look at
 - SPPL sum product networks
