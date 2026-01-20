@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "dd>=0.6.0",
+    "ipykernel>=7.1.0",
     "ipython>=9.9.0",
     "scipy>=1.16.3",
     "sympy>=1.14.0",
