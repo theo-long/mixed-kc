@@ -15,8 +15,9 @@ def get_float_value(v: WeightType, priors: dict[sympy.Symbol, "DistributionWithM
 
     weight_poly = v.as_poly(epsilon)
     assert weight_poly is not None, "Should get a polynomial"
+    weight_poly.simplify()
 
-    coeff = weight_poly.coeffs()[-1]
+    coeff = weight_poly.coeffs()[-1].simplify()
     for symbol, prior in priors.items():
         max_degree = sympy.degree(coeff, symbol)
         coeff = coeff.xreplace(
