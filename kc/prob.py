@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 import dd.autoref as _bdd
 from scipy.stats import norm
+import sympy
 
 from kc.model_count import model_count
 from kc.types import WeightType, epsilon
@@ -51,7 +52,9 @@ class KCState(GaussianVariableCounter):
     def __init__(self, truncation_state: TruncationState):
         self.bdd = _bdd.BDD()
         self.flips = 0
+        self.flip_params = 0
         self.weights: dict[int, tuple[WeightType, int | float | WeightType]] = {}
+        self.priors: dict[sympy.Symbol, DistributionWithMoments] = {}
         self._observes_all_hold = self.bdd.true
         self.truncations = truncation_state.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
@@ -250,6 +253,10 @@ class KCState(GaussianVariableCounter):
         self.flips += 1
         return self.flips
 
+    def next_flip_param(self):
+        self.flip_params += 1
+        return self.flip_params
+
     def set_weight(
         self,
         var,
@@ -444,14 +451,48 @@ class Var(AExpr):
         return substitued_value
 
 
+class DistributionWithMoments(AExpr):
+    @abstractmethod
+    def moment(self, n: int):
+        raise NotImplementedError
+
+    def collect_real_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        return
+
+    def kc(self, env, state):
+        flip_param_id = state.next_flip_param()
+        symbol = sympy.symbols(f"p{flip_param_id}")
+        state.priors[symbol] = self
+        return symbol
+
+
+@dataclass
+class BetaPrior(DistributionWithMoments):
+    alpha: float
+    beta: float
+
+    def moment(self, n):
+        if n == 0:
+            return 1
+        return (
+            self.moment(n - 1) * (self.alpha + n - 1) / (self.alpha + self.beta + n - 1)
+        )
+
+
 @dataclass
 class Flip(PExpr):
-    prob: float
+    prob: float | AExpr
 
     def kc(self, env, state):
         flip_id = state.next_flip()
         state.bdd.declare(f"flip_{flip_id}")
-        state.set_weight(f"flip_{flip_id}", self.prob, 1.0 - self.prob)
+        if isinstance(self.prob, (float, int)):
+            state.set_weight(f"flip_{flip_id}", self.prob, 1.0 - self.prob)
+        else:
+            prob_val = self.prob.kc(env, state)
+            state.set_weight(f"flip_{flip_id}", prob_val, 1.0 - prob_val)
         return state.bdd.var(f"flip_{flip_id}")
 
     def collect_real_truncation(self, env, state: "TruncationState"):
@@ -605,10 +646,10 @@ def run_kc(expr: PExpr):
     state = KCState(state)
     bdd = expr.kc({}, state)
     unnormalized_count = model_count(
-        state.bdd, bdd & state.observes_all_hold, state.weights
+        state.bdd, bdd & state.observes_all_hold, state.weights, state.priors
     )
     normalizing_constant = model_count(
-        state.bdd, state.observes_all_hold, state.weights
+        state.bdd, state.observes_all_hold, state.weights, state.priors
     )
     if normalizing_constant == 0:
         return None, normalizing_constant

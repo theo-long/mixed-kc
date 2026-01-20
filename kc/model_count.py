@@ -1,6 +1,11 @@
+import sympy
 import dd.autoref as _bdd
 
 from kc.types import WeightType, get_float_value
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from kc.prob import DistributionWithMoments
 
 
 def is_negated(u: _bdd.Function) -> bool:
@@ -31,9 +36,10 @@ def model_count(
     bdd: _bdd.BDD,
     u: _bdd.Function,
     weights: dict[int, tuple[WeightType, WeightType]],
+    priors: dict[sympy.Symbol, "DistributionWithMoments"]
 ):
     count = dict()
     count[bdd.true] = 1.0
     count[bdd.false] = 0.0
     weight = _model_count(bdd, u, count, weights)
-    return get_float_value(weight)
+    return get_float_value(weight, priors)

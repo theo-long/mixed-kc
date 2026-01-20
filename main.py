@@ -1,5 +1,6 @@
 from math import exp
 from kc.prob import (
+    BetaPrior,
     Const,
     Flip,
     Gaussian,
@@ -510,6 +511,56 @@ p17 = quad_gaussian(1.0, Var("b4"))
 expected_p16 = 0.5
 expected_p17 = 0.5
 
+# Adding priors on the flip probabilities
+boolean_expr = Let(
+    "result",
+    IfThenElse(
+        Var("b1"),
+        Var("b2"),
+        Var("b3"),
+    ),
+    Let(
+        "_",
+        Observe(Var("result")),
+        Var("b1"),
+    ),
+)
+p18 = Let(
+    "b1",
+    Flip(BetaPrior(1, 1)),
+    Let(
+        "b2",
+        Flip(BetaPrior(1, 1)),
+        Let(
+            "b3",
+            Flip(BetaPrior(1, 1)),
+            boolean_expr,
+        ),
+    ),
+)
+expected_p18 = 0.5
+
+
+# Adding *shared* priors on the flip probabilities
+p19 = Let(
+    "p",
+    BetaPrior(1, 1),
+    Let(
+        "b1",
+        Flip(Var("p")),
+        Let(
+            "b2",
+            Flip(Var("p")),
+            Let(
+                "b3",
+                Flip(Var("p")),
+                boolean_expr,
+            ),
+        ),
+    ),
+)
+expected_p19 = 0.5
+
 
 def main():
     print("Hello from mixed-kc!")
@@ -533,6 +584,9 @@ def main():
         ("p15", p15, expected_p15),
         ("p16", p16, expected_p16),
         ("p17", p17, expected_p17),
+        ("p18", p18, expected_p18),
+        ("p19", p19, expected_p19),
+
     ]:
         count += 1
         print(f"--- {name} ---")
