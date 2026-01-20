@@ -8,6 +8,7 @@ dependencies = [
     "dd>=0.6.0",
     "ipython>=9.9.0",
     "scipy>=1.16.3",
+    "sympy>=1.14.0",
 ]
 
 [dependency-groups]

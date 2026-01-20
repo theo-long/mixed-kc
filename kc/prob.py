@@ -8,10 +8,10 @@ from functools import reduce
 from typing import Any, Literal
 
 import dd.autoref as _bdd
-from numpy.polynomial import Polynomial
 from scipy.stats import norm
 
 from kc.model_count import model_count
+from kc.types import WeightType, epsilon
 
 
 class GaussianVariableCounter:
@@ -51,7 +51,7 @@ class KCState(GaussianVariableCounter):
     def __init__(self, truncation_state: TruncationState):
         self.bdd = _bdd.BDD()
         self.flips = 0
-        self.weights: dict[int, tuple[Polynomial, Polynomial]] = {}
+        self.weights: dict[int, tuple[WeightType, int | float | WeightType]] = {}
         self._observes_all_hold = self.bdd.true
         self.truncations = truncation_state.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
@@ -68,7 +68,7 @@ class KCState(GaussianVariableCounter):
     def get_gaussian_variable_pair_equality_expression(self, var: int, other: int):
         node = self._get_gaussian_pair_eq_node_name(var, other)
         self.bdd.declare(node)
-        self.set_weight(node, Polynomial([0.0, 1.0]), 1.0)
+        self.set_weight(node, epsilon, 1.0)
         return self.bdd.var(node)
 
     def get_gaussian_union_equality_expression(
@@ -253,13 +253,9 @@ class KCState(GaussianVariableCounter):
     def set_weight(
         self,
         var,
-        pos_weight: int | float | Polynomial,
-        neg_weight: int | float | Polynomial,
+        pos_weight: WeightType,
+        neg_weight: WeightType,
     ):
-        if not isinstance(pos_weight, Polynomial):
-            pos_weight = Polynomial([pos_weight])
-        if not isinstance(neg_weight, Polynomial):
-            neg_weight = Polynomial([neg_weight])
         self.weights[var] = (pos_weight, neg_weight)
 
 
