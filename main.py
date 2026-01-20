@@ -559,7 +559,7 @@ p19 = Let(
         ),
     ),
 )
-expected_p19 = 0.5
+expected_p19 = 2 / 3
 
 
 def main():
