@@ -72,6 +72,9 @@ class KCState(GaussianVariableCounter):
         return f"_g{first}=g{second}"
 
     def get_gaussian_variable_pair_equality_expression(self, var: int, other: int):
+        assert settings.single_observe_eps, (
+            "This function should only be called when `single_observe_eps=False`"
+        )
         node = self._get_gaussian_pair_eq_node_name(var, other)
         self.bdd.declare(node)
         self.set_weight(node, epsilon, 1.0)
@@ -95,16 +98,20 @@ class KCState(GaussianVariableCounter):
         guarded_clause = self.bdd.false
         for i in range(len(symbolic_value.values)):
             clause = unguarded_clauses[i]
-            # For equality, we need to ensure that only one of the equality clauses is true
-            # This is to ensure that the density is only counted once
-            for j in range(len(symbolic_value.values)):
-                if i != j:
-                    clause = clause & (
-                        ~equality_nodes[j]
-                        | self.get_gaussian_variable_pair_equality_expression(
-                            symbolic_value.values[i].var, symbolic_value.values[j].var
+            # In the case where single_observe_eps, this is handled automatically by the eps logic
+            # since the double equality setting will have weight eps^2, single equality weight eps
+            if not settings.single_observe_eps:
+                # For equality, we need to ensure that only one of the equality clauses is true
+                # This is to ensure that the density is only counted once
+                for j in range(len(symbolic_value.values)):
+                    if i != j:
+                        clause = clause & (
+                            ~equality_nodes[j]
+                            | self.get_gaussian_variable_pair_equality_expression(
+                                symbolic_value.values[i].var,
+                                symbolic_value.values[j].var,
+                            )
                         )
-                    )
             # Add formula guarding this value to the clause
             clause = clause & symbolic_value.formulae[i]
             guarded_clause = guarded_clause | clause
@@ -243,6 +250,8 @@ class KCState(GaussianVariableCounter):
             gaussian_cdf(*self.gaussian_params[var], upper)
             - gaussian_cdf(*self.gaussian_params[var], lower)
         )
+        if settings.single_observe_eps:
+            weight *= epsilon
         self.set_weight(equality_node_name, weight, 1.0)
         self.bdd_equality_nodes[var].add(equality_node_name)
         equality_clause = inequality_clause & self.bdd.var(equality_node_name)
