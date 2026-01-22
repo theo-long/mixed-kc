@@ -33,8 +33,8 @@ class TruncationState(GaussianVariableCounter):
         self.truncations: dict[int, set[float]] = defaultdict(set)
         super().__init__()
 
-    def add_truncation(self, var: int, value: float):
-        self.truncations[var].add(value)
+    def add_truncation(self, var: int, scale: float, shift: float, value: float):
+        self.truncations[var].add((value - shift) / scale)
 
     def get_truncations(self, var: int) -> set[float]:
         return self.truncations.get(var, set())
@@ -275,8 +275,8 @@ class RealValue(ABC):
 @dataclass
 class GaussianVariable(RealValue):
     var: int
-    scaling: float = 1.0
-    translation: float = 0.0
+    scale: float = 1.0
+    shift: float = 0.0
 
     def collect_real_truncation(self, env, state: "TruncationState"):
         return self
@@ -317,7 +317,10 @@ def merge_real_values_ignore_cond(t, f):
     else:
         raise TypeError(f"Unexpected type for f: {type(f)}")
 
-    gaussian_vars = {gaussian.var: gaussian for gaussian in f_values + t_values}
+    gaussian_vars = {
+        (gaussian.var, gaussian.scale, gaussian.shift): gaussian
+        for gaussian in f_values + t_values
+    }
 
     return GaussianUnion(formulae=[], values=list(gaussian_vars.values()))
 
@@ -353,29 +356,23 @@ def merge_real_values(cond, t, f):
 
     # Build a map from var -> list of guards (formulae) for that variable
     # This allows us to OR together guards for the same variable
-    var_to_guards = {}
-    var_to_gaussian = {}
+    var_and_transform_to_guards = {}
+    var_and_transform_to_gaussian = {}
 
-    # Process t branch: formulae and values are aligned
-    for formula, gv in zip(t_formulae, t_values):
-        var = gv.var
-        if var not in var_to_guards:
-            var_to_guards[var] = []
-            var_to_gaussian[var] = gv
-        var_to_guards[var].append(formula)
-
-    # Process f branch: formulae and values are aligned
-    for formula, gv in zip(f_formulae, f_values):
-        var = gv.var
-        if var not in var_to_guards:
-            var_to_guards[var] = []
-            var_to_gaussian[var] = gv
-        var_to_guards[var].append(formula)
+    # Process t then f branch: formulae and values are aligned
+    for formula, gv in itertools.chain(
+        zip(t_formulae, t_values), zip(f_formulae, f_values)
+    ):
+        var_and_transform = gv.var, gv.scale, gv.shift
+        if var_and_transform not in var_and_transform_to_guards:
+            var_and_transform_to_guards[var_and_transform] = []
+            var_and_transform_to_gaussian[var_and_transform] = gv
+        var_and_transform_to_guards[var_and_transform].append(formula)
 
     # Build aligned lists: OR together guards for each unique variable
     all_formulae = []
     all_values = []
-    for var, guards in var_to_guards.items():
+    for var_and_transform, guards in var_and_transform_to_guards.items():
         # OR all guards together for this variable
         if len(guards) == 1:
             combined_guard = guards[0]
@@ -385,7 +382,7 @@ def merge_real_values(cond, t, f):
             for guard in guards[1:]:
                 combined_guard = combined_guard | guard
         all_formulae.append(combined_guard)
-        all_values.append(var_to_gaussian[var])
+        all_values.append(var_and_transform_to_gaussian[var_and_transform])
 
     return GaussianUnion(formulae=all_formulae, values=all_values)
 
@@ -450,9 +447,9 @@ class Affine(RealValue):
     shift: float = 0.0
 
     def _apply_to_gaussian_var(self, var: GaussianVariable) -> GaussianVariable:
-        new_scaling = var.scaling * self.scale
-        new_translation = var.translation * self.scale + self.shift
-        return GaussianVariable(var.var, new_scaling, new_translation)
+        new_scale = var.scale * self.scale
+        new_shift = var.shift * self.scale + self.shift
+        return GaussianVariable(var.var, new_scale, new_shift)
 
     def _apply_to_gaussian_union(self, union: GaussianUnion) -> GaussianUnion:
         new_values = [self._apply_to_gaussian_var(var) for var in union.values]
@@ -670,10 +667,12 @@ class Inequality(PExpr):
         symbolic_value = self.symbolic_value.collect_real_truncation(env, state)
 
         if isinstance(symbolic_value, GaussianVariable):
-            state.add_truncation(symbolic_value.var, self.val)
+            state.add_truncation(
+                symbolic_value.var, symbolic_value.scale, symbolic_value.shift, self.val
+            )
         elif isinstance(symbolic_value, GaussianUnion):
             for gv in symbolic_value.values:
-                state.add_truncation(gv.var, self.val)
+                state.add_truncation(gv.var, gv.scale, gv.shift, self.val)
         else:
             raise TypeError(
                 f"Unexpected type for symbolic_value: {type(self.symbolic_value)}"

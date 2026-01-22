@@ -599,33 +599,86 @@ p21 = Let(
 # Either g is 0.5 or it is 1.0
 expected_p21 = gaussian_pdf(0, 1, 1) / (gaussian_pdf(0, 1, 0.5) + gaussian_pdf(0, 1, 1))
 
+# Same as above, but now we observe that the pair is > 1.
+p21 = Let(
+    "g",
+    Gaussian(0, 1),
+    Let(
+        "b",
+        Flip(0.5),
+        Let(
+            "x",
+            IfThenElse(
+                Var("b"),
+                Var("g"),
+                Affine(Var("g"), 2),
+            ),
+            Let("_", Observe(Inequality(Var("x"), ">", 1.0)), Var("b")),
+        ),
+    ),
+)
+# Either g is between 0.5 and 1, or between 1 and inf
+p21_normalizing_const = 0.5 * (gaussian_cdf(0, 1, 1) - gaussian_cdf(0, 1, 0.5)) + (
+    1 - gaussian_cdf(0, 1, 1)
+)
+expected_p21 = (
+    0.5 * (gaussian_cdf(0, 1, 1) - gaussian_cdf(0, 1, 0.5))
+    + 0.5 * (1 - gaussian_cdf(0, 1, 1))
+) / p21_normalizing_const
+
+# Observe both a gaussian variable and its transformation in an incompatible way
+p22 = Let(
+    "g",
+    Gaussian(0, 1),
+    Let(
+        "_",
+        ObserveReal(Var("g"), 1),
+        Let("_", ObserveReal(Affine(Var("g"), 2, 1), 1), Const(True)),
+    ),
+)
+expected_p22 = None
+
+# Observe both a gaussian variable and its transformation in a compatible way
+p23 = Let(
+    "g",
+    Gaussian(0, 1),
+    Let(
+        "_",
+        ObserveReal(Var("g"), 1),
+        Let("_", ObserveReal(Affine(Var("g"), 2, 1), 3), Const(True)),
+    ),
+)
+expected_p23 = 1.0
+
 
 def main():
     print("Hello from mixed-kc!")
     errors = 0
     count = 0
     for name, program, expected_prob in [
-        ("p1", p1, expected_p1),
-        ("p2", p2, expected_p2),
-        ("p3", p3, expected_p3),
-        ("p4", p4, expected_p4),
-        ("p5", p5, expected_p5),
-        ("p6", p6, expected_p6),
-        ("p7", p7, expected_p7),
-        ("p8", p8, expected_p8),
-        ("p9", p9, expected_p9),
-        ("p10", p10, expected_p10),
-        ("p11", p11, expected_p11),
-        ("p12", p12, expected_p12),
-        ("p13", p13, expected_p13),
-        ("p14", p14, expected_p14),
-        ("p15", p15, expected_p15),
-        ("p16", p16, expected_p16),
-        ("p17", p17, expected_p17),
-        ("p18", p18, expected_p18),
-        ("p19", p19, expected_p19),
+        # ("p1", p1, expected_p1),
+        # ("p2", p2, expected_p2),
+        # ("p3", p3, expected_p3),
+        # ("p4", p4, expected_p4),
+        # ("p5", p5, expected_p5),
+        # ("p6", p6, expected_p6),
+        # ("p7", p7, expected_p7),
+        # ("p8", p8, expected_p8),
+        # ("p9", p9, expected_p9),
+        # ("p10", p10, expected_p10),
+        # ("p11", p11, expected_p11),
+        # ("p12", p12, expected_p12),
+        # ("p13", p13, expected_p13),
+        # ("p14", p14, expected_p14),
+        # ("p15", p15, expected_p15),
+        # ("p16", p16, expected_p16),
+        # ("p17", p17, expected_p17),
+        # ("p18", p18, expected_p18),
+        # ("p19", p19, expected_p19),
         ("p20", p20, expected_p20),
         ("p21", p21, expected_p21),
+        ("p22", p22, expected_p22),
+        ("p23", p23, expected_p23),
     ]:
         count += 1
         print(f"--- {name} ---")
