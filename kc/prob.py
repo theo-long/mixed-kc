@@ -275,6 +275,8 @@ class RealValue(ABC):
 @dataclass
 class GaussianVariable(RealValue):
     var: int
+    scaling: float = 1.0
+    translation: float = 0.0
 
     def collect_real_truncation(self, env, state: "TruncationState"):
         return self
@@ -437,6 +439,41 @@ class Gaussian(AExpr):
         var = state.next_gaussian()
         state.set_gaussian_params(var, self.mean, self.std)
         return GaussianVariable(var)
+
+
+@dataclass
+class Mult(RealValue):
+    body: PExpr
+    value: float
+
+    def _apply_to_gaussian_var(self, var: GaussianVariable) -> GaussianVariable:
+        new_scaling = var.scaling * self.value
+        new_translation = var.translation * self.value
+        return GaussianVariable(var.var, new_scaling, new_translation)
+
+    def _apply_to_gaussian_union(self, union: GaussianUnion) -> GaussianUnion:
+        new_values = [self._apply_to_gaussian_var(var) for var in union.values]
+        return GaussianUnion(union.formulae, new_values)
+
+    def kc(self, env, state):
+        body = self.body.kc(env, state)
+        if isinstance(body, GaussianVariable):
+            return self._apply_to_gaussian_var(body)
+        elif isinstance(body, GaussianUnion):
+            return self._apply_to_gaussian_union(body)
+        else:
+            raise TypeError("body should evaluate to a RealValue")
+
+    def collect_real_truncation(
+        self, env: dict[str, PExpr], state: TruncationState
+    ) -> Any:
+        body = self.body.collect_real_truncation(env, state)
+        if isinstance(body, GaussianVariable):
+            return self._apply_to_gaussian_var(body)
+        elif isinstance(body, GaussianUnion):
+            return self._apply_to_gaussian_union(body)
+        else:
+            raise TypeError("body should evaluate to a RealValue")
 
 
 @dataclass
