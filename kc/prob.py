@@ -66,7 +66,9 @@ class KCState(GaussianVariableCounter):
         super().__init__()
 
     def _get_gaussian_pair_eq_node_name(self, var: int, other: int):
-        return f"_g{var}=g{other}"
+        # Need to sort so that we don't have separate nodes g1=g2 and g2=g1
+        first, second = min(var, other), max(var, other)
+        return f"_g{first}=g{second}"
 
     def get_gaussian_variable_pair_equality_expression(self, var: int, other: int):
         node = self._get_gaussian_pair_eq_node_name(var, other)
