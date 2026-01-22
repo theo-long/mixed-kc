@@ -227,6 +227,8 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 - Can we do ObserveReal on the "p" variables?
 - Can we do inference over the "p" variables vs. just marginalizing them out?
 - add ability to have latent Gaussians that can be parameters of other distributions
+- IfThenElse optimization where if we know cond is actually false/true we can skip a branch
+    - is this handled by laziness somehow?
 
 
 ## Questions

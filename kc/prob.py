@@ -442,13 +442,16 @@ class Gaussian(AExpr):
 
 
 @dataclass
-class Mult(RealValue):
+class Affine(RealValue):
+    """Corresponds to the expression body * scale + shift"""
+
     body: PExpr
-    value: float
+    scale: float = 1.0
+    shift: float = 0.0
 
     def _apply_to_gaussian_var(self, var: GaussianVariable) -> GaussianVariable:
-        new_scaling = var.scaling * self.value
-        new_translation = var.translation * self.value
+        new_scaling = var.scaling * self.scale
+        new_translation = var.translation * self.scale + self.shift
         return GaussianVariable(var.var, new_scaling, new_translation)
 
     def _apply_to_gaussian_union(self, union: GaussianUnion) -> GaussianUnion:

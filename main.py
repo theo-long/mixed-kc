@@ -13,6 +13,7 @@ from kc.prob import (
     gaussian_cdf,
     gaussian_pdf,
     run_kc,
+    Affine,
 )
 
 # Flip a coin, choose between two different Gaussians, observe the result
@@ -561,6 +562,43 @@ p19 = Let(
 )
 expected_p19 = 2 / 3
 
+# Same as p1, but now we multiply the second gaussian by 2
+p20 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "x",
+        IfThenElse(
+            Var("b"),
+            Gaussian(0, 1),
+            Affine(Gaussian(0, 1), 2),
+        ),
+        Let("_", ObserveReal(Var("x"), 1.0), Var("b")),
+    ),
+)
+expected_p20 = expected_p1
+
+# We observe the *same gaussian* in both branches, but in the second it is multiplied by 2
+p21 = Let(
+    "g",
+    Gaussian(0, 1),
+    Let(
+        "b",
+        Flip(0.5),
+        Let(
+            "x",
+            IfThenElse(
+                Var("b"),
+                Var("g"),
+                Affine(Var("g"), 2),
+            ),
+            Let("_", ObserveReal(Var("x"), 1.0), Var("b")),
+        ),
+    ),
+)
+# Either g is 0.5 or it is 1.0
+expected_p21 = gaussian_pdf(0, 1, 1) / (gaussian_pdf(0, 1, 0.5) + gaussian_pdf(0, 1, 1))
+
 
 def main():
     print("Hello from mixed-kc!")
@@ -586,7 +624,8 @@ def main():
         ("p17", p17, expected_p17),
         ("p18", p18, expected_p18),
         ("p19", p19, expected_p19),
-
+        ("p20", p20, expected_p20),
+        ("p21", p21, expected_p21),
     ]:
         count += 1
         print(f"--- {name} ---")
