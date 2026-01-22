@@ -674,10 +674,47 @@ p23 = Let(
     Let(
         "_",
         ObserveReal(Var("g"), 1),
-        Let("_", ObserveReal(Affine(Var("g"), 2, 1), 3), Const(True)),
+        Let(
+            "_",
+            ObserveReal(Affine(Var("g"), -1), 3),
+            Const(True),
+        ),
     ),
 )
-expected_p23 = 1.0
+expected_p23 = None
+
+# Observe both a gaussian variable and itself multiplied by -1 being equal to the same value
+p24 = Let(
+    "g",
+    Gaussian(0, 1),
+    Let(
+        "_",
+        ObserveReal(Var("g"), 1),
+        Let(
+            "_",
+            ObserveReal(Affine(Var("g"), -1), 3),
+            Const(True),
+        ),
+    ),
+)
+expected_p24 = None
+
+# If a gaussian is <= -1, multiply it by -1
+# What is prob it is > 0?
+p25 = Let(
+    "g",
+    Gaussian(0, 1),
+    Let(
+        "g_transformed",
+        IfThenElse(
+            Inequality(Var("g"), "<=", -1),
+            Affine(Var("g"), -1),
+            Var("g"),
+        ),
+        Inequality(Var("g_transformed"), ">", 0),
+    ),
+)
+expected_p25 = 1 - (gaussian_cdf(0, 1, 0) - gaussian_cdf(0, 1, -1))
 
 
 def main():
@@ -708,6 +745,8 @@ def main():
         ("p21", p21, expected_p21),
         ("p22", p22, expected_p22),
         ("p23", p23, expected_p23),
+        ("p24", p24, expected_p24),
+        ("p25", p25, expected_p25),
     ]:
         count += 1
         print(f"--- {name} ---")

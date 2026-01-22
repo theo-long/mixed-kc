@@ -49,6 +49,11 @@ def get_truncated_flip_name(gaussian: int, upper: float, lower: float):
     return f"_g{gaussian}<{upper}|>{lower}"
 
 
+def flip_inequality(inequality: Literal["<=", ">"]):
+    # TODO - this is wrong! need to support >= and < as well
+    return ">" if inequality == "<=" else "<="
+
+
 class KCState(GaussianVariableCounter):
     def __init__(self, truncation_state: TruncationState):
         self.bdd = _bdd.BDD()
@@ -145,6 +150,9 @@ class KCState(GaussianVariableCounter):
         return f"_g{var}={val}|{lower}<g{var}<={upper}"
 
     def _get_interval_node_name(self, var: int, lower: float, upper: float):
+        # Avoid issues with -0.0
+        lower += 0.0
+        upper += 0.0
         return f"_g{var}<={upper}|>{lower}"
 
     def add_bdd_nodes_for_gaussian_variable(self, var: int):
@@ -186,6 +194,8 @@ class KCState(GaussianVariableCounter):
         val: float,
     ):
         val = (val - shift) / scale
+        if scale < 0:
+            inequality = flip_inequality(inequality)
         sorted_thresholds = (
             [float("-inf")]
             + sorted(self.truncations.get(var, set()))
