@@ -576,7 +576,12 @@ p20 = Let(
         Let("_", ObserveReal(Var("x"), 1.0), Var("b")),
     ),
 )
-expected_p20 = expected_p1
+# Should we score this under base measure of N(0, 1) or N(0, 2)?
+# Current implementation scores under N(0, 1)
+# If we want to have the other version, we need to add an 'epsilon' to all of our Gaussian observe scores
+expected_p20 = gaussian_pdf(0.0, 1.0, 1.0) / (
+    gaussian_pdf(0.0, 1.0, 1.0) + gaussian_pdf(0.0, 1.0, 0.5)
+)
 
 # We observe the *same gaussian* in both branches, but in the second it is multiplied by 2
 p21 = Let(
@@ -618,13 +623,11 @@ p21 = Let(
     ),
 )
 # Either g is between 0.5 and 1, or between 1 and inf
+# In the first case, flip is False, in the second it is 50/50
 p21_normalizing_const = 0.5 * (gaussian_cdf(0, 1, 1) - gaussian_cdf(0, 1, 0.5)) + (
     1 - gaussian_cdf(0, 1, 1)
 )
-expected_p21 = (
-    0.5 * (gaussian_cdf(0, 1, 1) - gaussian_cdf(0, 1, 0.5))
-    + 0.5 * (1 - gaussian_cdf(0, 1, 1))
-) / p21_normalizing_const
+expected_p21 = (0.5 * (1 - gaussian_cdf(0, 1, 1))) / p21_normalizing_const
 
 # Observe both a gaussian variable and its transformation in an incompatible way
 p22 = Let(
@@ -637,6 +640,18 @@ p22 = Let(
     ),
 )
 expected_p22 = None
+
+# Observe both a gaussian variable and its transformation in a compatible way
+p23 = Let(
+    "g",
+    Gaussian(0, 1),
+    Let(
+        "_",
+        ObserveReal(Var("g"), 1),
+        Let("_", ObserveReal(Affine(Var("g"), 2, 1), 3), Const(True)),
+    ),
+)
+expected_p23 = 1.0
 
 # Observe both a gaussian variable and its transformation in a compatible way
 p23 = Let(

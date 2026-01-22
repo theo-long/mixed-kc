@@ -11,6 +11,7 @@ import dd.autoref as _bdd
 import sympy
 from scipy.stats import norm
 
+from kc.config import settings
 from kc.model_count import model_count
 from kc.types import WeightType, epsilon
 
@@ -86,7 +87,7 @@ class KCState(GaussianVariableCounter):
         for v in symbolic_value.values:
             # get the observe clause for this value
             clause, equality_node = self.get_gaussian_variable_equality_expression(
-                v.var, val
+                v.var, v.scale, v.shift, val
             )
             unguarded_clauses.append(clause)
             equality_nodes.append(equality_node)
@@ -120,7 +121,7 @@ class KCState(GaussianVariableCounter):
         for v in symbolic_value.values:
             # get the observe clause for this value
             clause = self.get_gaussian_variable_inequality_expression(
-                v.var, inequality, val
+                v.var, v.scale, v.shift, inequality, val
             )
             unguarded_clauses.append(clause)
 
@@ -170,8 +171,14 @@ class KCState(GaussianVariableCounter):
         return sorted_thresholds
 
     def get_gaussian_variable_inequality_expression(
-        self, var: int, inequality: Literal["<=", ">"], val: float
+        self,
+        var: int,
+        scale: float,
+        shift: float,
+        inequality: Literal["<=", ">"],
+        val: float,
     ):
+        val = (val - shift) / scale
         sorted_thresholds = (
             [float("-inf")]
             + sorted(self.truncations.get(var, set()))
@@ -198,7 +205,10 @@ class KCState(GaussianVariableCounter):
 
         return clause
 
-    def get_gaussian_variable_equality_expression(self, var: int, val: float):
+    def get_gaussian_variable_equality_expression(
+        self, var: int, scale: float, shift: float, val: float
+    ):
+        val = (val - shift) / scale
         sorted_thresholds = (
             [float("-inf")]
             + sorted(self.truncations.get(var, set()))
@@ -215,12 +225,14 @@ class KCState(GaussianVariableCounter):
         inequality_clause = self.bdd.true
         if lower != float("-inf"):
             inequality_clause = self.get_gaussian_variable_inequality_expression(
-                var, ">", lower
+                var, 1.0, 0.0, ">", lower
             )
         if upper != float("inf"):
             inequality_clause = (
                 inequality_clause
-                & self.get_gaussian_variable_inequality_expression(var, "<=", upper)
+                & self.get_gaussian_variable_inequality_expression(
+                    var, 1.0, 0.0, "<=", upper
+                )
             )
 
         equality_node_name = self._get_eq_node_name(var, val, lower, upper)
@@ -439,7 +451,7 @@ class Gaussian(AExpr):
 
 
 @dataclass
-class Affine(RealValue):
+class Affine(PExpr):
     """Corresponds to the expression body * scale + shift"""
 
     body: PExpr
@@ -627,7 +639,7 @@ class ObserveReal(PExpr):
         symbolic_value = self.symbolic_value.kc(env, state)
         if isinstance(symbolic_value, GaussianVariable):
             clause, _ = state.get_gaussian_variable_equality_expression(
-                symbolic_value.var, self.val
+                symbolic_value.var, symbolic_value.scale, symbolic_value.shift, self.val
             )
         elif isinstance(symbolic_value, GaussianUnion):
             clause = state.get_gaussian_union_equality_expression(
@@ -653,7 +665,11 @@ class Inequality(PExpr):
         symbolic_value = self.symbolic_value.kc(env, state)
         if isinstance(symbolic_value, GaussianVariable):
             clause = state.get_gaussian_variable_inequality_expression(
-                symbolic_value.var, self.inequality, self.val
+                symbolic_value.var,
+                symbolic_value.scale,
+                symbolic_value.shift,
+                self.inequality,
+                self.val,
             )
         elif isinstance(symbolic_value, GaussianUnion):
             clause = state.get_gaussian_union_inequality_expression(
@@ -686,6 +702,11 @@ def run_kc(expr: PExpr):
     expr.collect_real_truncation({}, state)
     state = KCState(state)
     bdd = expr.kc({}, state)
+    if settings.debug:
+        print(f"BDD vars: {state.bdd.vars}")
+        print(f"Result expr: {bdd.to_expr()}")
+        print(f"Observes expr: {state.observes_all_hold.to_expr()}")
+        print(f"Result & Observes expr {(bdd & state.observes_all_hold).to_expr()}")
     unnormalized_count = model_count(
         state.bdd, bdd & state.observes_all_hold, state.weights, state.priors
     )
