@@ -8,8 +8,8 @@ from functools import reduce
 from typing import Any, Literal
 
 import dd.autoref as _bdd
-from scipy.stats import norm
 import sympy
+from scipy.stats import norm
 
 from kc.model_count import model_count
 from kc.types import WeightType, epsilon
