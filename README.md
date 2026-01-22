@@ -223,6 +223,11 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 ## TODO
 - add flags for turning features on/off
 - add affine transformations of Gaussians
+    - what if I observe both g1 and f(g1)?
+- Can we do ObserveReal on the "p" variables?
+- Can we do inference over the "p" variables vs. just marginalizing them out?
+- add ability to have latent Gaussians that can be parameters of other distributions
+
 
 ## Questions
 - Are we actually using the BDD library anywhere for WMC, or just to construct BDD?
@@ -234,3 +239,4 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 
 ## Things to look at
 - SPPL sum product networks
+    - compare inequality implementation - is theirs somehow stronger/weaker/different?
