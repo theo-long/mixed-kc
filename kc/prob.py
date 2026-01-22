@@ -72,7 +72,7 @@ class KCState(GaussianVariableCounter):
         return f"_g{first}=g{second}"
 
     def get_gaussian_variable_pair_equality_expression(self, var: int, other: int):
-        assert settings.single_observe_eps, (
+        assert not settings.single_observe_eps, (
             "This function should only be called when `single_observe_eps=False`"
         )
         node = self._get_gaussian_pair_eq_node_name(var, other)
@@ -252,6 +252,8 @@ class KCState(GaussianVariableCounter):
         )
         if settings.single_observe_eps:
             weight *= epsilon
+        if settings.transform_measures:
+            weight /= scale
         self.set_weight(equality_node_name, weight, 1.0)
         self.bdd_equality_nodes[var].add(equality_node_name)
         equality_clause = inequality_clause & self.bdd.var(equality_node_name)

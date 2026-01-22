@@ -1,4 +1,4 @@
-from math import exp
+from kc.config import settings
 from kc.prob import (
     BetaPrior,
     Const,
@@ -576,12 +576,14 @@ p20 = Let(
         Let("_", ObserveReal(Var("x"), 1.0), Var("b")),
     ),
 )
-# Should we score this under base measure of N(0, 1) or N(0, 2)?
-# Current implementation scores under N(0, 1)
-# If we want to have the other version, we need to add an 'epsilon' to all of our Gaussian observe scores
-expected_p20 = gaussian_pdf(0.0, 1.0, 1.0) / (
-    gaussian_pdf(0.0, 1.0, 1.0) + gaussian_pdf(0.0, 1.0, 0.5)
-)
+# Should we score this under measure of N(0, 1) or N(0, 2)?
+# flag changes it
+if settings.transform_measures:
+    expected_p20 = expected_p1
+else:
+    expected_p20 = gaussian_pdf(0.0, 1.0, 1.0) / (
+        gaussian_pdf(0.0, 1.0, 1.0) + gaussian_pdf(0.0, 1.0, 0.5)
+    )
 
 # We observe the *same gaussian* in both branches, but in the second it is multiplied by 2
 p21 = Let(
@@ -654,6 +656,18 @@ p23 = Let(
 expected_p23 = 1.0
 
 # Observe both a gaussian variable and its transformation in a compatible way
+p23 = Let(
+    "g",
+    Gaussian(0, 1),
+    Let(
+        "_",
+        ObserveReal(Var("g"), 1),
+        Let("_", ObserveReal(Affine(Var("g"), 2, 1), 3), Const(True)),
+    ),
+)
+expected_p23 = 1.0
+
+# Observe both a gaussian variable and itself multiplied by -1 being equal to the same value
 p23 = Let(
     "g",
     Gaussian(0, 1),
