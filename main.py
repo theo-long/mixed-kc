@@ -561,6 +561,38 @@ p19 = Let(
 )
 expected_p19 = 2 / 3
 
+# Flip between two gaussians, observe result > 0, and observe one gaussian greater than another
+p20 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 1),
+            Let(
+                "result",
+                IfThenElse(
+                    Var("b"),
+                    Var("g1"),
+                    Var("g2"),
+                ),
+                Let(
+                    "_",
+                    Observe(Inequality(Var("g1"), ">", Var("g2"))),
+                    Let(
+                        "_",
+                        Observe(Inequality(Var("result"), ">", 0.0)),
+                        Var("b1"),
+                    ),
+                ),
+            ),
+        ),
+    ),
+)
+expected_p20 = 3 / 4
+
 
 def main():
     print("Hello from mixed-kc!")
@@ -586,28 +618,36 @@ def main():
         ("p17", p17, expected_p17),
         ("p18", p18, expected_p18),
         ("p19", p19, expected_p19),
-
+        ("p20", p20, expected_p20),
     ]:
         count += 1
+        error = False
         print(f"--- {name} ---")
-        prob, normalizing_constant = run_kc(program)
-        if prob != expected_prob:
-            print("### ERROR ###")
+        try:
+            prob, normalizing_constant = run_kc(program)
+            if prob != expected_prob:
+                print("### ERROR ###")
+                error = True
+            print(
+                f"Probability of b: {prob: .3%}"
+                if prob is not None
+                else "Probability of b: None"
+            )
+            print(
+                f"Expected probability of b: {expected_prob: .3%}"
+                if expected_prob is not None
+                else "Expected probability of b: None"
+            )
+            if name == "p7":
+                print(f"Expected normalizing constant: {expected_Z_p7: .6f}")
+            print(f"Normalizing constant: {normalizing_constant: .6f}")
+            print()
+        except Exception as e:
+            print(f"### Exception: {e}")
+            error = True
+        
+        if error:
             errors += 1
-        print(
-            f"Probability of b: {prob: .3%}"
-            if prob is not None
-            else "Probability of b: None"
-        )
-        print(
-            f"Expected probability of b: {expected_prob: .3%}"
-            if expected_prob is not None
-            else "Expected probability of b: None"
-        )
-        if name == "p7":
-            print(f"Expected normalizing constant: {expected_Z_p7: .6f}")
-        print(f"Normalizing constant: {normalizing_constant: .6f}")
-        print()
 
     print(f"{count - errors} / {count} tests passed.")
 

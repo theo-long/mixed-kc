@@ -606,35 +606,44 @@ class ObserveReal(PExpr):
 
 @dataclass
 class Inequality(PExpr):
-    symbolic_value: PExpr
+    lhs: PExpr
     inequality: Literal["<=", ">"]
-    val: float
+    rhs: float | PExpr
 
     def kc(self, env, state: KCState):
-        symbolic_value = self.symbolic_value.kc(env, state)
-        if isinstance(symbolic_value, GaussianVariable):
+        lhs = self.lhs.kc(env, state)
+        if isinstance(self.rhs, PExpr):
+            rhs = self.rhs.kc(env, state)
+        else:
+            rhs = self.rhs
+
+        if isinstance(lhs, GaussianVariable):
             clause = state.get_gaussian_variable_inequality_expression(
-                symbolic_value.var, self.inequality, self.val
+                lhs.var, self.inequality, rhs
             )
-        elif isinstance(symbolic_value, GaussianUnion):
+        elif isinstance(lhs, GaussianUnion):
             clause = state.get_gaussian_union_inequality_expression(
-                symbolic_value, self.inequality, self.val
+                lhs, self.inequality, rhs
             )
         else:
-            raise TypeError(f"Unexpected type: {type(symbolic_value)}")
+            raise TypeError(f"Unexpected type for lhs: {type(lhs)}")
         return clause
 
     def collect_real_truncation(self, env, state):
-        symbolic_value = self.symbolic_value.collect_real_truncation(env, state)
+        lhs = self.lhs.collect_real_truncation(env, state)
+        if isinstance(self.rhs, PExpr):
+            rhs = self.rhs.collect_real_truncation(env, state)
+        else:
+            rhs = self.rhs
 
-        if isinstance(symbolic_value, GaussianVariable):
-            state.add_truncation(symbolic_value.var, self.val)
-        elif isinstance(symbolic_value, GaussianUnion):
-            for gv in symbolic_value.values:
-                state.add_truncation(gv.var, self.val)
+        if isinstance(lhs, GaussianVariable):
+            state.add_truncation(lhs.var, rhs)
+        elif isinstance(lhs, GaussianUnion):
+            for gv in lhs.values:
+                state.add_truncation(gv.var, rhs)
         else:
             raise TypeError(
-                f"Unexpected type for symbolic_value: {type(self.symbolic_value)}"
+                f"Unexpected type for lhs: {type(lhs)}"
             )
 
         return
