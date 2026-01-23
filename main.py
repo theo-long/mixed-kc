@@ -716,6 +716,33 @@ p27 = Let(
 )
 expected_p27 = 1 - (gaussian_cdf(0, 1, 0) - gaussian_cdf(0, 1, -1))
 
+# Same as p20, but now we observe both the result and result *2
+p28 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "x",
+        IfThenElse(
+            Var("b"),
+            Gaussian(0, 1),
+            Affine(Gaussian(0, 1), 2),
+        ),
+        Let(
+            "_",
+            ObserveReal(Affine(Var("x"), 2), 2.0),
+            Let("_", ObserveReal(Var("x"), 1.0), Var("b")),
+        ),
+    ),
+)
+# Should we score this under measure of N(0, 1) or N(0, 2)?
+# flag changes it
+if settings.transform_measures:
+    expected_p28 = expected_p1
+else:
+    expected_p28 = gaussian_pdf(0.0, 1.0, 1.0) / (
+        gaussian_pdf(0.0, 1.0, 1.0) + gaussian_pdf(0.0, 1.0, 0.5)
+    )
+
 
 def main():
     print("Hello from mixed-kc!")
@@ -750,6 +777,7 @@ def main():
         ("p25", p25, expected_p25),
         ("p26", p26, expected_p26),
         ("p27", p27, expected_p27),
+        ("p28", p28, expected_p28),
     ]:
         count += 1
         print(f"--- {name} ---")
