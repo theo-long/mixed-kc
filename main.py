@@ -656,7 +656,7 @@ p23 = Let(
 expected_p23 = 1.0
 
 # Observe both a gaussian variable and its transformation in a compatible way
-p23 = Let(
+p24 = Let(
     "g",
     Gaussian(0, 1),
     Let(
@@ -665,10 +665,10 @@ p23 = Let(
         Let("_", ObserveReal(Affine(Var("g"), 2, 1), 3), Const(True)),
     ),
 )
-expected_p23 = 1.0
+expected_p24 = 1.0
 
 # Observe both a gaussian variable and itself multiplied by -1 being equal to the same value
-p23 = Let(
+p25 = Let(
     "g",
     Gaussian(0, 1),
     Let(
@@ -681,10 +681,10 @@ p23 = Let(
         ),
     ),
 )
-expected_p23 = None
+expected_p25 = None
 
 # Observe both a gaussian variable and itself multiplied by -1 being equal to the same value
-p24 = Let(
+p26 = Let(
     "g",
     Gaussian(0, 1),
     Let(
@@ -697,11 +697,11 @@ p24 = Let(
         ),
     ),
 )
-expected_p24 = None
+expected_p26 = None
 
 # If a gaussian is <= -1, multiply it by -1
 # What is prob it is > 0?
-p25 = Let(
+p27 = Let(
     "g",
     Gaussian(0, 1),
     Let(
@@ -714,7 +714,7 @@ p25 = Let(
         Inequality(Var("g_transformed"), ">", 0),
     ),
 )
-expected_p25 = 1 - (gaussian_cdf(0, 1, 0) - gaussian_cdf(0, 1, -1))
+expected_p27 = 1 - (gaussian_cdf(0, 1, 0) - gaussian_cdf(0, 1, -1))
 
 
 def main():
@@ -748,11 +748,13 @@ def main():
         ("p23", p23, expected_p23),
         ("p24", p24, expected_p24),
         ("p25", p25, expected_p25),
+        ("p26", p26, expected_p26),
+        ("p27", p27, expected_p27),
     ]:
         count += 1
         print(f"--- {name} ---")
         prob, normalizing_constant = run_kc(program)
-        if prob != expected_prob and abs(prob-expected_prob) > tol:
+        if prob != expected_prob and abs(prob - expected_prob) > tol:
             print("### ERROR ###")
             errors += 1
         print(
