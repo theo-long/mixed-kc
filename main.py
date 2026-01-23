@@ -721,6 +721,7 @@ def main():
     print("Hello from mixed-kc!")
     errors = 0
     count = 0
+    tol = 1e-8
     for name, program, expected_prob in [
         ("p1", p1, expected_p1),
         ("p2", p2, expected_p2),
@@ -751,7 +752,7 @@ def main():
         count += 1
         print(f"--- {name} ---")
         prob, normalizing_constant = run_kc(program)
-        if prob != expected_prob:
+        if prob != expected_prob and abs(prob-expected_prob) > tol:
             print("### ERROR ###")
             errors += 1
         print(

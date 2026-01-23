@@ -146,6 +146,25 @@ class KCState(GaussianVariableCounter):
         upper += 0.0
         return f"_g{var}<={upper}|>{lower}"
 
+    def _create_eq_node(
+        self, var: int, val: float, lower: float, upper: float, scale: float
+    ):
+        equality_node_name = self._get_eq_node_name(var, val, lower, upper)
+        self.bdd.declare(equality_node_name)
+        # Compute weight for equality node
+        # It is the density at val divided by the normalization constant for the interval
+        weight = gaussian_pdf(*self.gaussian_params[var], val) / (
+            gaussian_cdf(*self.gaussian_params[var], upper)
+            - gaussian_cdf(*self.gaussian_params[var], lower)
+        )
+        if settings.single_observe_eps:
+            weight *= epsilon
+        if settings.transform_measures:
+            weight /= scale
+        self.set_weight(equality_node_name, weight, 1.0)
+        self.bdd_equality_nodes[var].add(equality_node_name)
+        return self.bdd.var(equality_node_name)
+
     def add_bdd_nodes_for_gaussian_variable(self, var: int):
         # Get Gaussian parameters
         mean, std = self.gaussian_params[var]
@@ -195,21 +214,39 @@ class KCState(GaussianVariableCounter):
             ]
         )
         split_index = sorted_thresholds.index(val)
-        if inequality == "<=":
+        if inequality in ["<=", "<"]:
             # Some node (x <= upper | x > lower) where upper <= val must be true
             clause = self.bdd.false
+            lower, upper = 0.0, 0.0
             for i in range(0, split_index):
                 lower, upper = sorted_thresholds[i], sorted_thresholds[i + 1]
-                clause = clause | self.bdd.var(self._get_interval_node_name(var, lower, upper))
-        elif inequality == ">":
+                clause = clause | self.bdd.var(
+                    self._get_interval_node_name(var, lower, upper)
+                )
+            if inequality == "<":
+                eq_node_name = self._get_eq_node_name(var, val, lower, upper)
+                if eq_node_name not in self.bdd_equality_nodes[var]:
+                    eq_node = self._create_eq_node(var, val, lower, upper, scale)
+                else:
+                    eq_node = self.bdd.var(eq_node_name)
+                clause = clause & (~eq_node)
+        elif inequality in [">", ">="]:
             # Every node representing (x <= t | x > s) for t <= val must be false
             clause = self.bdd.true
+            lower, upper = 0.0, 0.0
             for i in range(1, split_index + 1):
                 lower = sorted_thresholds[i - 1]
                 upper = sorted_thresholds[i]
                 clause = clause & ~self.bdd.var(
                     self._get_interval_node_name(var, lower, upper)
                 )
+            if inequality == ">=":
+                eq_node_name = self._get_eq_node_name(var, val, lower, upper)
+                if eq_node_name not in self.bdd_equality_nodes[var]:
+                    eq_node = self._create_eq_node(var, val, lower, upper, scale)
+                else:
+                    eq_node = self.bdd.var(eq_node_name)
+                clause = clause | eq_node
         else:
             raise ValueError(f"Unexpected inequality: {inequality}")
 
@@ -245,22 +282,9 @@ class KCState(GaussianVariableCounter):
                 )
             )
 
-        equality_node_name = self._get_eq_node_name(var, val, lower, upper)
-        self.bdd.declare(equality_node_name)
-        # Compute weight for equality node
-        # It is the density at val divided by the normalization constant for the interval
-        weight = gaussian_pdf(*self.gaussian_params[var], val) / (
-            gaussian_cdf(*self.gaussian_params[var], upper)
-            - gaussian_cdf(*self.gaussian_params[var], lower)
-        )
-        if settings.single_observe_eps:
-            weight *= epsilon
-        if settings.transform_measures:
-            weight /= scale
-        self.set_weight(equality_node_name, weight, 1.0)
-        self.bdd_equality_nodes[var].add(equality_node_name)
-        equality_clause = inequality_clause & self.bdd.var(equality_node_name)
-        return equality_clause, self.bdd.var(equality_node_name)
+        equality_node = self._create_eq_node(var, val, lower, upper, scale)
+        equality_clause = inequality_clause & equality_node
+        return equality_clause, equality_node
 
     @property
     def mutually_compatible_equalities(self):
