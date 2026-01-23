@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
-from typing import Any, Literal
+from typing import Any
 
 import dd.autoref as _bdd
 import sympy
@@ -13,7 +13,7 @@ from scipy.stats import norm
 
 from kc.config import settings
 from kc.model_count import model_count
-from kc.types import WeightType, epsilon
+from kc.types import InequalityLiteral, WeightType, epsilon, inequality_flip_mapping
 
 
 class GaussianVariableCounter:
@@ -49,11 +49,6 @@ def get_truncated_flip_name(gaussian: int, upper: float, lower: float):
     return f"_g{gaussian}<{upper}|>{lower}"
 
 
-def flip_inequality(inequality: Literal["<=", ">"]):
-    # TODO - this is wrong! need to support >= and < as well
-    return ">" if inequality == "<=" else "<="
-
-
 class KCState(GaussianVariableCounter):
     def __init__(self, truncation_state: TruncationState):
         self.bdd = _bdd.BDD()
@@ -64,10 +59,6 @@ class KCState(GaussianVariableCounter):
         self._observes_all_hold = self.bdd.true
         self.truncations = truncation_state.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
-
-        self._gaussian_observe_stack: list[
-            tuple[GaussianUnion | GaussianVariable, Literal["<", ">", "="], float],
-        ] = []
         self._gaussian_observes_all_hold = None
         super().__init__()
 
@@ -126,7 +117,7 @@ class KCState(GaussianVariableCounter):
     def get_gaussian_union_inequality_expression(
         self,
         symbolic_value: "GaussianUnion",
-        inequality: Literal["<=", ">"],
+        inequality: InequalityLiteral,
         val: float,
     ):
         unguarded_clauses = []
@@ -190,12 +181,12 @@ class KCState(GaussianVariableCounter):
         var: int,
         scale: float,
         shift: float,
-        inequality: Literal["<=", ">"],
+        inequality: InequalityLiteral,
         val: float,
     ):
         val = (val - shift) / scale
         if scale < 0:
-            inequality = flip_inequality(inequality)
+            inequality = inequality_flip_mapping[inequality]
         sorted_thresholds = (
             [float("-inf")]
             + sorted(self.truncations.get(var, set()))
@@ -204,10 +195,12 @@ class KCState(GaussianVariableCounter):
             ]
         )
         split_index = sorted_thresholds.index(val)
-        lower = sorted_thresholds[split_index - 1]
         if inequality == "<=":
-            # The node representing (x <= val | x > lower) must be true, since this gates larger values
-            clause = self.bdd.var(self._get_interval_node_name(var, lower, val))
+            # Some node (x <= upper | x > lower) where upper <= val must be true
+            clause = self.bdd.false
+            for i in range(0, split_index):
+                lower, upper = sorted_thresholds[i], sorted_thresholds[i + 1]
+                clause = clause | self.bdd.var(self._get_interval_node_name(var, lower, upper))
         elif inequality == ">":
             # Every node representing (x <= t | x > s) for t <= val must be false
             clause = self.bdd.true
@@ -679,7 +672,7 @@ class ObserveReal(PExpr):
 @dataclass
 class Inequality(PExpr):
     symbolic_value: PExpr
-    inequality: Literal["<=", ">"]
+    inequality: InequalityLiteral
     val: float
 
     def kc(self, env, state: KCState):

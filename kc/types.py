@@ -1,15 +1,25 @@
+from typing import TYPE_CHECKING, Literal
+
 import sympy
-from typing import TYPE_CHECKING
-
-epsilon = sympy.Symbol("epsilon")
-WeightType = int | float | sympy.Expr
-
 
 if TYPE_CHECKING:
     from kc.prob import DistributionWithMoments
 
+epsilon = sympy.Symbol("epsilon")
+WeightType = int | float | sympy.Expr
+InequalityLiteral = Literal["<", "<=", ">", ">="]
 
-def get_float_value(v: WeightType, priors: dict[sympy.Symbol, "DistributionWithMoments"]) -> float:
+inequality_flip_mapping: dict[InequalityLiteral, InequalityLiteral] = {
+    ">": "<",
+    "<": ">",
+    "<=": ">=",
+    ">=": "<=",
+}
+
+
+def get_float_value(
+    v: WeightType, priors: dict[sympy.Symbol, "DistributionWithMoments"]
+) -> float:
     if isinstance(v, (int, float)):
         return float(v)
 
