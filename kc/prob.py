@@ -655,16 +655,6 @@ class Observe(PExpr):
         return self.cond.collect_real_truncation(env, state)
 
 
-# Things to think about:
-#   When multiple observes talk about potentially the same GaussianVariable
-#     ObserveReal(3.0, Var("x"))
-#     ObserveReal(6.0, (Mul(2.0, Var("x"))))
-#     where Var("x") refers to a GaussianVariable(i).
-#       or where Var("x") is a union
-#     This is related to the question in Pun that we saw of density of [x, 2x] at [3, 6] when x ~ N(0, 1)?
-# How to handle the non-independence of ObserveRealInequality?
-
-
 @dataclass
 class ObserveReal(PExpr):
     symbolic_value: PExpr
