@@ -221,12 +221,10 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 # Misc. Notes
 
 ## TODO
-- add flags for turning features on/off
-- add affine transformations of Gaussians
-    - what if I observe both g1 and f(g1)?
 - Can we do ObserveReal on the "p" variables?
 - Can we do inference over the "p" variables vs. just marginalizing them out?
 - add ability to have latent Gaussians that can be parameters of other distributions
+- can we pass PExprs with Betas in the leaves to be the priors for p variables?
 - IfThenElse optimization where if we know cond is actually false/true we can skip a branch
     - is this handled by laziness somehow?
 
