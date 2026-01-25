@@ -228,12 +228,7 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 - IfThenElse optimization where if we know cond is actually false/true we can skip a branch
     - is this handled by laziness somehow?
 
-
-## Questions
-- Are we actually using the BDD library anywhere for WMC, or just to construct BDD?
-
 ## Ideas
-- Can we allow flip params to be symbolic values and perform inference on them? Point is that we can use KC to compile a formula for P(outcome | flip_thetas) which is some rational function in flip_thetas (since it is P(outcome) / P(observes all hold), both of which are polynomials in flip_thetas).
 - Adding in continuous latents that are conjugate
 - Can we allow for inequalties between two different Gaussian variables e.g. g1 <= g2? Or are we only able to do g1 <= val?
 
