@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Literal
 import sympy
 
 if TYPE_CHECKING:
-    from kc.prob import DistributionWithMoments
+    from kc.real_values import DistributionWithMoments
 
 epsilon = sympy.Symbol("epsilon")
 WeightType = int | float | sympy.Expr

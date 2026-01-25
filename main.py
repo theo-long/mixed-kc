@@ -1,19 +1,19 @@
-from kc.config import settings
-from kc.prob import (
+from kc import (
+    Affine,
     BetaPrior,
     Const,
     Flip,
     Gaussian,
     IfThenElse,
-    Let,
-    ObserveReal,
-    Observe,
     Inequality,
+    Let,
+    Observe,
+    ObserveReal,
     Var,
     gaussian_cdf,
     gaussian_pdf,
     run_kc,
-    Affine,
+    settings,
 )
 
 # Flip a coin, choose between two different Gaussians, observe the result
