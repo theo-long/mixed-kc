@@ -9,28 +9,26 @@ import sympy
 
 from kc.config import settings
 from kc.real_values import (
+    DistributionWithDensity,
     DistributionWithMoments,
-    GaussianUnion,
-    gaussian_cdf,
-    gaussian_pdf,
+    RealVariable,
+    Union,
 )
 from kc.types import InequalityLiteral, WeightType, epsilon, inequality_flip_mapping
 
 
-class GaussianVariableCounter:
+class RandomVariableCounter:
     def __init__(self) -> None:
-        self.gaussians = 0
-        self.gaussian_params: dict[int, tuple[float, float]] = {}
+        self.rv_counter = 0
+        self.rvs: dict[int, DistributionWithDensity] = {}
 
-    def next_gaussian(self):
-        self.gaussians += 1
-        return self.gaussians
-
-    def set_gaussian_params(self, var, mu, sigma):
-        self.gaussian_params[var] = (mu, sigma)
+    def next_variable(self, rv: DistributionWithDensity):
+        self.rv_counter += 1
+        self.rvs[self.rv_counter] = rv
+        return self.rv_counter
 
 
-class TruncationState(GaussianVariableCounter):
+class TruncationState(RandomVariableCounter):
     def __init__(self):
         self.truncations: dict[int, set[float]] = defaultdict(set)
         super().__init__()
@@ -42,7 +40,7 @@ class TruncationState(GaussianVariableCounter):
         return self.truncations.get(var, set())
 
 
-class KCState(GaussianVariableCounter):
+class KCState(RandomVariableCounter):
     def __init__(self, truncation_state: TruncationState):
         self.bdd = _bdd.BDD()
         self.flips = 0
@@ -71,7 +69,7 @@ class KCState(GaussianVariableCounter):
 
     def get_gaussian_union_equality_expression(
         self,
-        symbolic_value: "GaussianUnion",
+        symbolic_value: Union,
         val: float,
     ):
         unguarded_clauses = []
@@ -109,7 +107,7 @@ class KCState(GaussianVariableCounter):
 
     def get_gaussian_union_inequality_expression(
         self,
-        symbolic_value: "GaussianUnion",
+        symbolic_value: Union,
         inequality: InequalityLiteral,
         val: float,
     ):
@@ -146,12 +144,12 @@ class KCState(GaussianVariableCounter):
         self.bdd.declare(equality_node_name)
         # Compute weight for equality node
         # It is the density at val divided by the normalization constant for the interval
-        weight = gaussian_pdf(*self.gaussian_params[var], val) / (
-            gaussian_cdf(*self.gaussian_params[var], upper)
-            - gaussian_cdf(*self.gaussian_params[var], lower)
+        self.rvs[var].pdf(val)
+        weight = self.rvs[var].pdf(val) / (
+            self.rvs[var].cdf(upper) - self.rvs[var].cdf(lower)
         )
         if settings.single_observe_eps:
-            weight *= epsilon
+            weight = weight * epsilon
         if settings.transform_measures:
             weight /= scale
         self.set_weight(equality_node_name, weight, 1.0)
@@ -160,7 +158,7 @@ class KCState(GaussianVariableCounter):
 
     def add_bdd_nodes_for_gaussian_variable(self, var: int):
         # Get Gaussian parameters
-        mean, std = self.gaussian_params[var]
+        rv = self.rvs[var]
         sorted_thresholds = sorted(self.truncations.get(var, set()))
         sorted_thresholds.insert(0, float("-inf"))
         sorted_thresholds.append(float("inf"))
@@ -177,11 +175,9 @@ class KCState(GaussianVariableCounter):
             if lower == float("-inf"):
                 remaining_probability_mass = 1
             else:
-                remaining_probability_mass = 1 - gaussian_cdf(mean, std, lower)
+                remaining_probability_mass = 1 - rv.cdf(lower)
 
-            flip_prob = (
-                gaussian_cdf(mean, std, upper) - gaussian_cdf(mean, std, lower)
-            ) / remaining_probability_mass
+            flip_prob = (rv.cdf(upper) - rv.cdf(lower)) / remaining_probability_mass
 
             # Set weights: true weight = probability of being in interval
             self.set_weight(interval_node_name, flip_prob, 1.0 - flip_prob)

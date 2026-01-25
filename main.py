@@ -1,6 +1,6 @@
 from kc import (
     Affine,
-    BetaPrior,
+    Beta,
     Const,
     Flip,
     Gaussian,
@@ -10,11 +10,19 @@ from kc import (
     Observe,
     ObserveReal,
     Var,
-    gaussian_cdf,
-    gaussian_pdf,
     run_kc,
     settings,
 )
+from scipy.stats import norm
+
+
+def gaussian_pdf(mean, std, val):
+    return norm.pdf(val, loc=mean, scale=std).item()
+
+
+def gaussian_cdf(mean, std, val):
+    return norm.cdf(val, loc=mean, scale=std).item()
+
 
 # Flip a coin, choose between two different Gaussians, observe the result
 p1 = Let(
@@ -528,13 +536,13 @@ boolean_expr = Let(
 )
 p18 = Let(
     "b1",
-    Flip(BetaPrior(1, 1)),
+    Flip(Beta(1, 1)),
     Let(
         "b2",
-        Flip(BetaPrior(1, 1)),
+        Flip(Beta(1, 1)),
         Let(
             "b3",
-            Flip(BetaPrior(1, 1)),
+            Flip(Beta(1, 1)),
             boolean_expr,
         ),
     ),
@@ -545,7 +553,7 @@ expected_p18 = 0.5
 # Adding *shared* priors on the flip probabilities
 p19 = Let(
     "p",
-    BetaPrior(1, 1),
+    Beta(1, 1),
     Let(
         "b1",
         Flip(Var("p")),

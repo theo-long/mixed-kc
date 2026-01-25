@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 
 from kc.base import AExpr, PExpr
 from kc.real_values import (
-    GaussianUnion,
+    Union,
     GaussianVariable,
     RealValue,
     merge_real_values,
@@ -142,7 +142,7 @@ class ObserveReal(PExpr):
             clause, _ = state.get_gaussian_variable_equality_expression(
                 symbolic_value.var, symbolic_value.scale, symbolic_value.shift, self.val
             )
-        elif isinstance(symbolic_value, GaussianUnion):
+        elif isinstance(symbolic_value, Union):
             clause = state.get_gaussian_union_equality_expression(
                 symbolic_value, self.val
             )
@@ -172,7 +172,7 @@ class Inequality(PExpr):
                 self.inequality,
                 self.val,
             )
-        elif isinstance(symbolic_value, GaussianUnion):
+        elif isinstance(symbolic_value, Union):
             clause = state.get_gaussian_union_inequality_expression(
                 symbolic_value, self.inequality, self.val
             )
@@ -187,7 +187,7 @@ class Inequality(PExpr):
             state.add_truncation(
                 symbolic_value.var, symbolic_value.scale, symbolic_value.shift, self.val
             )
-        elif isinstance(symbolic_value, GaussianUnion):
+        elif isinstance(symbolic_value, Union):
             for gv in symbolic_value.values:
                 state.add_truncation(gv.var, gv.scale, gv.shift, self.val)
         else:

@@ -2,10 +2,8 @@ from .config import settings
 from .inference import run_kc
 from .real_values import (
     Affine,
-    BetaPrior,
+    Beta,
     Gaussian,
-    gaussian_cdf,
-    gaussian_pdf,
 )
 from .terms import (
     Const,
@@ -30,7 +28,7 @@ __all__ = [
     "ObserveReal",
     "Var",
     "Affine",
-    "BetaPrior",
+    "Beta",
     "Gaussian",
     "gaussian_cdf",
     "gaussian_pdf",
