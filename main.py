@@ -744,6 +744,34 @@ else:
     )
 
 
+# Branch to two different gaussians, but if one is > 0, then branch back to the other
+p29 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 1),
+            Let(
+                "result",
+                IfThenElse(
+                    Var("b"),
+                    IfThenElse(Inequality(Var("g1"), "<=", 0), Var("g2"), Var("g1")),
+                    Var("g2"),
+                ),
+                Let(
+                    "_",
+                    ObserveReal(Var("result"), 1),
+                    Var("b"),
+                ),
+            ),
+        ),
+    ),
+)
+expected_p29 = 0.75 / (0.75 + 0.5)
+
 def main():
     print("Hello from mixed-kc!")
     errors = 0
@@ -778,6 +806,7 @@ def main():
         ("p26", p26, expected_p26),
         ("p27", p27, expected_p27),
         ("p28", p28, expected_p28),
+        ("p29", p29, expected_p29),
     ]:
         count += 1
         print(f"--- {name} ---")
