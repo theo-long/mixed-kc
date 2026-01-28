@@ -44,7 +44,10 @@ class Beta(AExpr, DistributionWithMoments, DistributionWithDensity):
         )
 
     def cdf(self, val):
-        return beta.cdf(val).item()
+        return beta.cdf(val, a=self.alpha, b=self.beta).item()
+
+    def pdf(self, val):
+        return beta.pdf(val, a=self.alpha, b=self.beta).item()
 
     def collect_real_truncation(
         self, env: dict[str, PExpr], state: "TruncationState"
@@ -79,12 +82,6 @@ class Gaussian(AExpr, DistributionWithDensity):
 
     def cdf(self, val):
         return norm.cdf(val, loc=self.mean, scale=self.std).item()
-
-    def __add__(self, other):
-        return Sum(self, other)
-
-    def __sub__(self, other):
-        return Sum(self, Affine(other, scale=-1.0))
 
 
 class RealValue(ABC):

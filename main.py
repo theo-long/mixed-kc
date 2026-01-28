@@ -15,6 +15,8 @@ from kc import (
 )
 from scipy.stats import norm
 
+from kc.real_values import Sum
+
 
 def gaussian_pdf(mean, std, val):
     return norm.pdf(val, loc=mean, scale=std).item()
@@ -796,8 +798,8 @@ p30 = Let(
                     "result",
                     IfThenElse(
                         Var("b"),
-                        Var("x") + Var("y"),
-                        Var("x") + Var("z"),
+                        Sum(Var("x"), Var("y")),
+                        Sum(Var("x"), Var("z")),
                     ),
                     Let("_", ObserveReal(Var("Result"), 0.0), Var("b")),
                 ),
