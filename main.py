@@ -780,6 +780,34 @@ p29 = Let(
 )
 expected_p29 = 0.75 / (0.75 + 0.5)
 
+p30 = Let(
+    "b",
+    Flip(0.5),
+    Let(
+        "x",
+        Gaussian(0, 1),
+        Let(
+            "y",
+            Gaussian(1, 2),
+            Let(
+                "z",
+                Gaussian(-1, 1),
+                Let(
+                    "result",
+                    IfThenElse(
+                        Var("b"),
+                        Var("x") + Var("y"),
+                        Var("x") + Var("z"),
+                    ),
+                    Let("_", ObserveReal(Var("Result"), 0.0), Var("b")),
+                ),
+            ),
+        ),
+    ),
+)
+expected_p30 = None
+
+
 def main():
     print("Hello from mixed-kc!")
     errors = 0

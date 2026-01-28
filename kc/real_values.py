@@ -80,6 +80,12 @@ class Gaussian(AExpr, DistributionWithDensity):
     def cdf(self, val):
         return norm.cdf(val, loc=self.mean, scale=self.std).item()
 
+    def __add__(self, other):
+        return Sum(self, other)
+
+    def __sub__(self, other):
+        return Sum(self, Affine(other, scale=-1.0))
+
 
 class RealValue(ABC):
     pass
@@ -117,6 +123,20 @@ class Union[T](RealValue):
 
     def collect_real_truncation(self, env, state: "TruncationState"):
         return self
+
+
+@dataclass
+class Sum(PExpr):
+    """Sum of two Gaussian variables"""
+
+    left: PExpr
+    right: PExpr
+
+    def kc(self, env, state):
+        pass
+
+    def collect_real_truncation(self, env, state):
+        raise NotImplementedError()
 
 
 @dataclass
