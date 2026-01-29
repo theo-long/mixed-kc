@@ -18,7 +18,33 @@ class PExpr(ABC):
         """Collect all the observed inequalities and the Gaussian variables they apply to."""
         raise NotImplementedError()
 
+    def __add__(self, other: "PExpr") -> "PExpr":
+        from kc.real_values import Sum
+
+        if isinstance(other, (int, float)):
+            from kc.real_values import Affine
+
+            return Affine(self, shift=other)
+        elif not isinstance(other, PExpr):
+            raise TypeError("Can only add PExpr or scalar")
+        return Sum(self, other)
+
+    def __sub__(self, other: "PExpr") -> "PExpr":
+        from kc.real_values import Affine
+
+        if not isinstance(other, (PExpr, int, float)):
+            raise TypeError("Can only subtract PExpr or scalar")
+
+        return self + Affine(other, scale=-1)
+
+    def __mul__(self, other: float) -> "PExpr":
+        from kc.real_values import Affine
+
+        if not isinstance(other, (int, float)):
+            raise TypeError("Can only multiply by scalar")
+
+        return Affine(self, scale=other)
+
 
 class AExpr(PExpr):
     pass
-

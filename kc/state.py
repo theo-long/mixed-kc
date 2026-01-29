@@ -11,7 +11,6 @@ from kc.config import settings
 from kc.real_values import (
     DistributionWithDensity,
     DistributionWithMoments,
-    RealVariable,
     Union,
 )
 from kc.types import InequalityLiteral, WeightType, epsilon, inequality_flip_mapping
@@ -149,7 +148,7 @@ class KCState(RandomVariableCounter):
             self.rvs[var].cdf(upper) - self.rvs[var].cdf(lower)
         )
         if settings.single_observe_eps:
-            weight = weight * epsilon
+            weight = weight * epsilon  # type: ignore
         if settings.transform_measures:
             weight /= scale
         self.set_weight(equality_node_name, weight, 1.0)

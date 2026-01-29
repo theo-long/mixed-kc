@@ -4,6 +4,7 @@ from .real_values import (
     Affine,
     Beta,
     Gaussian,
+    Sum,
 )
 from .terms import (
     Const,
@@ -30,6 +31,5 @@ __all__ = [
     "Affine",
     "Beta",
     "Gaussian",
-    "gaussian_cdf",
-    "gaussian_pdf",
+    "Sum",
 ]

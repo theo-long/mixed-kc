@@ -536,6 +536,7 @@ dependencies = [
     { name = "dd" },
     { name = "ipykernel" },
     { name = "ipython" },
+    { name = "multiset" },
     { name = "pydantic-settings" },
     { name = "scipy" },
     { name = "seaborn" },
@@ -552,6 +553,7 @@ requires-dist = [
     { name = "dd", specifier = ">=0.6.0" },
     { name = "ipykernel", specifier = ">=7.1.0" },
     { name = "ipython", specifier = ">=9.9.0" },
+    { name = "multiset", specifier = ">=3.2.0" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
@@ -568,6 +570,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e0/47/dd32fa426cc72114383ac549964eecb20ecfd886d1e5ccf5340b55b02f57/mpmath-1.3.0.tar.gz", hash = "sha256:7a28eb2a9774d00c7bc92411c19a89209d5da7c4c9a9e227be8330a23a25b91f", size = 508106, upload-time = "2023-03-07T16:47:11.061Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl", hash = "sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c", size = 536198, upload-time = "2023-03-07T16:47:09.197Z" },
+]
+
+[[package]]
+name = "multiset"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/4f/72e53b7ba1d54d2243521d3548a49a3dedd85d31df2eabf44bcc6414f18f/multiset-3.2.0.tar.gz", hash = "sha256:7c59a786284b9c339df4f219dcbb4ce5f44d3ac1b20f922636c4d789e89cf7b5", size = 34517, upload-time = "2024-08-27T13:16:56.364Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/68/860e006b22a7fcbb4b198a988a4df51672a65a43f59148f617b6fe9a49ad/multiset-3.2.0-py2.py3-none-any.whl", hash = "sha256:d31c6737f537d326835b55be72d0b2e2cf368c874a58cc87879f349273841a1a", size = 11507, upload-time = "2024-08-27T13:16:55.258Z" },
 ]
 
 [[package]]
