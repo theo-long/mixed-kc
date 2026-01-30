@@ -143,7 +143,7 @@ T = TypeVar("T", bound=RealVariable)
 
 
 @dataclass(eq=True, frozen=True)
-class Union[T](RealValue):
+class Union[T](RealValue, AffineTransformable):
     formulae: tuple[Any]
     values: tuple[T]
 
