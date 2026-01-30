@@ -49,7 +49,6 @@ class KCState(RandomVariableCounter):
         self._observes_all_hold = self.bdd.true
         self.truncations = truncation_state.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
-        self._gaussian_observes_all_hold = None
         super().__init__()
 
     def _get_gaussian_pair_eq_node_name(self, var: int, other: int):
