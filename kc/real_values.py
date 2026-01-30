@@ -188,7 +188,7 @@ class GaussianSum(RealVariable, AffineTransformable):
         # Combine Unions which are identical by counting occurrences
         new_vars: dict[int, GaussianVariable] = {}
         new_unions: dict[Union, int] = defaultdict(int)
-        for rv in self.rvs.union(other.rvs):
+        for rv in itertools.chain(self.rvs, other.rvs):
             if isinstance(rv, GaussianVariable):
                 if rv.var in new_vars:
                     existing_var = new_vars[rv.var]
