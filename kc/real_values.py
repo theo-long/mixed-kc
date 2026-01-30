@@ -405,9 +405,6 @@ def merge_real_values_reduced(cond, t, f):
         f_formulae = [~cond & formula for formula in f.formulae]
         f_values = f.values
     else:
-        from IPython import embed
-
-        embed()  # noqa: E402
         raise TypeError(f"Unexpected type for f: {type(f)}")
 
     # Build a map from var -> list of guards (formulae) for that variable
