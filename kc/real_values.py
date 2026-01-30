@@ -93,14 +93,15 @@ class RealVariable(RealValue):
     pass
 
 
-class Zero(RealValue):
-    pass
-
-
 class AffineTransformable(ABC):
     @abstractmethod
-    def apply_affine(self, scale: float, shift: float) -> Self | Zero:
+    def apply_affine(self, scale: float, shift: float) -> Self | "Zero":
         raise NotImplementedError()
+
+
+class Zero(RealVariable, AffineTransformable):
+    def apply_affine(self, scale: float, shift: float):
+        return self
 
 
 @dataclass(eq=True, frozen=True)
@@ -143,8 +144,8 @@ T = TypeVar("T", bound=RealVariable)
 
 @dataclass(eq=True, frozen=True)
 class Union[T](RealValue):
-    formulae: list[Any]
-    values: list[T]
+    formulae: tuple[Any]
+    values: tuple[T]
 
     def collect_real_truncation(self, env, state: "TruncationState"):
         return self
@@ -156,7 +157,7 @@ class Union[T](RealValue):
             "All values must be AffineTransformable"
         )
         new_values = [var.apply_affine(scale, shift) for var in self.values]  # type: ignore
-        return Union(self.formulae, new_values)
+        return Union(self.formulae, tuple(new_values))
 
 
 @dataclass(frozen=True, eq=True)
@@ -229,9 +230,9 @@ class Sum(PExpr):
         # We make everything a Union to simplify the logic
         # We effectively 'invert' Unions so that sum of Unions becomes Union of Sums
         if not isinstance(left, Union):
-            left = Union([state.bdd.true], [left])
+            left = Union((state.bdd.true,), (left,))
         if not isinstance(right, Union):
-            right = Union([state.bdd.true], [right])
+            right = Union((state.bdd.true,), (right,))
 
         sum_to_formula = defaultdict(list)
         for (lhs_formula, lhs_value), (rhs_formula, rhs_value) in itertools.product(
@@ -254,7 +255,7 @@ class Sum(PExpr):
         if len(sums) == 1:
             return sums[0]
 
-        return Union(formulae, sums)
+        return Union(tuple(formulae), tuple(sums))
 
     def collect_real_truncation(self, env, state):
         left = self.left.collect_real_truncation(env, state)
@@ -271,9 +272,9 @@ class Sum(PExpr):
         # We make everything a Union to simplify the logic
         # We effectively 'invert' Unions so that sum of Unions becomes Union of Sums
         if not isinstance(left, Union):
-            left = Union([], [left])
+            left = Union((None,), (left,))
         if not isinstance(right, Union):
-            right = Union([], [right])
+            right = Union((None,), (right,))
 
         # For truncation we don't need to track formulae, just the sums
         sums = set()
@@ -289,7 +290,7 @@ class Sum(PExpr):
         if len(sums) == 1:
             return sums.pop()
 
-        return Union(formulae=[], values=list(sums))
+        return Union(formulae=(None,), values=tuple(sums))
 
 
 @dataclass
@@ -323,7 +324,7 @@ def merge_real_values_ignore_cond(t, f):
     if isinstance(t, RealVariable):
         t_values = [t]
     elif isinstance(t, Union):
-        t_values = t.values
+        t_values = list(t.values)
     else:
         raise TypeError(f"Unexpected type for t: {type(t)}")
 
@@ -331,11 +332,11 @@ def merge_real_values_ignore_cond(t, f):
     if isinstance(f, RealVariable):
         f_values = [f]
     elif isinstance(f, Union):
-        f_values = f.values
+        f_values = list(f.values)
     else:
         raise TypeError(f"Unexpected type for f: {type(f)}")
 
-    return Union(formulae=[], values=list(set(f_values + t_values)))
+    return Union(formulae=(None,), values=tuple(set(f_values + t_values)))  # type: ignore
 
 
 def merge_real_values(cond, t, f):
@@ -396,7 +397,7 @@ def merge_real_values_reduced(cond, t, f):
         raise TypeError(f"Unexpected type for t: {type(t)}")
 
     # Extract formulae and values from f (else branch)
-    if isinstance(f, GaussianVariable):
+    if isinstance(f, RealVariable):
         f_formulae = [~cond]
         f_values = [f]
     elif isinstance(f, Union):
@@ -404,6 +405,9 @@ def merge_real_values_reduced(cond, t, f):
         f_formulae = [~cond & formula for formula in f.formulae]
         f_values = f.values
     else:
+        from IPython import embed
+
+        embed()  # noqa: E402
         raise TypeError(f"Unexpected type for f: {type(f)}")
 
     # Build a map from var -> list of guards (formulae) for that variable
@@ -425,4 +429,4 @@ def merge_real_values_reduced(cond, t, f):
         all_formulae.append(combined_guard)
         all_values.append(var)
 
-    return Union(formulae=all_formulae, values=all_values)
+    return Union(formulae=tuple(all_formulae), values=tuple(all_values))
