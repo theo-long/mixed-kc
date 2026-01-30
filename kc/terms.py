@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 from kc.base import AExpr, PExpr
 from kc.real_values import (
-    Union,
     GaussianVariable,
     RealValue,
+    Union,
     merge_real_values,
     merge_real_values_ignore_cond,
 )

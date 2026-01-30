@@ -1,16 +1,17 @@
 import itertools
+from numbers import Real
 import operator
 from abc import ABC, abstractmethod
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
 from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 import sympy
 from scipy.stats import beta, norm
-from multiset import FrozenMultiset
 
 from kc.base import AExpr, PExpr
+from kc.config import settings
 
 if TYPE_CHECKING:
     from kc.state import TruncationState
@@ -93,9 +94,13 @@ class RealVariable(RealValue):
     pass
 
 
+class Zero(RealValue):
+    pass
+
+
 class AffineTransformable(ABC):
     @abstractmethod
-    def apply_affine(self, scale: float, shift: float) -> Self:
+    def apply_affine(self, scale: float, shift: float) -> Self | Zero:
         raise NotImplementedError()
 
 
@@ -108,10 +113,22 @@ class GaussianVariable(RealVariable, AffineTransformable):
     def collect_real_truncation(self, env, state: "TruncationState"):
         return self
 
-    def apply_affine(self, scale: float, shift: float) -> "GaussianVariable":
+    def apply_affine(self, scale: float, shift: float):
+        if scale == 0.0:
+            return Zero()
         new_scale = self.scale * scale
         new_shift = self.shift * scale + shift
         return GaussianVariable(self.var, new_scale, new_shift)
+
+    def __add__(self, other: "GaussianVariable") -> "GaussianVariable":
+        if not isinstance(other, GaussianVariable):
+            raise TypeError("Can only add GaussianVariable to GaussianVariable")
+        if self.var == other.var:
+            new_scale = self.scale + other.scale
+            new_shift = self.shift + other.shift
+            return GaussianVariable(self.var, new_scale, new_shift)
+        else:
+            raise ValueError("Cannot add GaussianVariables with different vars")
 
 
 @dataclass(eq=True, frozen=True)
@@ -133,7 +150,9 @@ class Union[T](RealValue):
     def collect_real_truncation(self, env, state: "TruncationState"):
         return self
 
-    def apply_affine(self, scale: float, shift: float) -> "Union":
+    def apply_affine(self, scale: float, shift: float):
+        if scale == 0.0:
+            return Zero()
         assert all(isinstance(var, AffineTransformable) for var in self.values), (
             "All values must be AffineTransformable"
         )
@@ -145,16 +164,18 @@ class Union[T](RealValue):
 class GaussianSum(RealVariable, AffineTransformable):
     """Sum of n Gaussian variables after evaluation"""
 
-    rvs: FrozenMultiset[GaussianVariable]
+    rvs: frozenset[GaussianVariable | Zero]
 
-    def apply_affine(self, scale: float, shift: float) -> "GaussianSum":
+    def apply_affine(self, scale: float, shift: float):
+        if scale == 0.0:
+            return Zero()
         new_rvs = []
         for rv in self.rvs:
-            if isinstance(rv, GaussianVariable):
+            if isinstance(rv, (GaussianVariable, Union)):
                 new_rvs.append(rv.apply_affine(scale, shift))
             else:
                 raise TypeError("rv must be GaussianVariable or Union")
-        return GaussianSum(FrozenMultiset(new_rvs))
+        return GaussianSum(frozenset(new_rvs))
 
     def collect_real_truncation(self, env, state: "TruncationState"):
         return self
@@ -162,8 +183,29 @@ class GaussianSum(RealVariable, AffineTransformable):
     def __add__(self, other: "GaussianSum") -> "GaussianSum":
         if not isinstance(other, GaussianSum):
             raise TypeError("Can only add GaussianSum to GaussianSum")
-        new_rvs = self.rvs + other.rvs
-        return GaussianSum(new_rvs)
+
+        # Combine GaussianVariables which have same underlying var
+        # Combine Unions which are identical by counting occurrences
+        new_vars: dict[int, GaussianVariable] = {}
+        new_unions: dict[Union, int] = defaultdict(int)
+        for rv in self.rvs.union(other.rvs):
+            if isinstance(rv, GaussianVariable):
+                if rv.var in new_vars:
+                    existing_var = new_vars[rv.var]
+                    combined_var = existing_var + rv
+                    new_vars[rv.var] = combined_var
+                else:
+                    new_vars[rv.var] = rv
+            elif isinstance(rv, Union):
+                new_unions[rv] += 1
+            else:
+                raise TypeError("rv must be GaussianVariable or Union")
+        combined_unions = []
+        for union, count in new_unions.items():
+            for _ in range(count):
+                combined_unions.append(union.apply_affine(count, 0.0))
+        new_rvs = list(new_vars.values()) + combined_unions
+        return GaussianSum(frozenset(new_rvs))
 
 
 @dataclass
@@ -177,6 +219,14 @@ class Sum(PExpr):
         left = self.left.kc(env, state)
         right = self.right.kc(env, state)
 
+        if not settings.union_of_sums:
+            # Reduce to case of sum of sums
+            if not isinstance(left, GaussianSum):
+                left = GaussianSum(frozenset([left]))
+            if not isinstance(right, GaussianSum):
+                right = GaussianSum(frozenset([right]))
+            return left + right
+
         # We make everything a Union to simplify the logic
         # We effectively 'invert' Unions so that sum of Unions becomes Union of Sums
         if not isinstance(left, Union):
@@ -189,9 +239,9 @@ class Sum(PExpr):
             zip(left.formulae, left.values), zip(right.formulae, right.values)
         ):
             if not isinstance(lhs_value, GaussianSum):
-                lhs_value = GaussianSum(FrozenMultiset([lhs_value]))
+                lhs_value = GaussianSum(frozenset([lhs_value]))
             if not isinstance(rhs_value, GaussianSum):
-                rhs_value = GaussianSum(FrozenMultiset([rhs_value]))
+                rhs_value = GaussianSum(frozenset([rhs_value]))
             sum_value = lhs_value + rhs_value
             sum_to_formula[sum_value].append(lhs_formula & rhs_formula)
 
@@ -211,6 +261,14 @@ class Sum(PExpr):
         left = self.left.collect_real_truncation(env, state)
         right = self.right.collect_real_truncation(env, state)
 
+        if not settings.union_of_sums:
+            # Reduce to case of sum of sums
+            if not isinstance(left, GaussianSum):
+                left = GaussianSum(frozenset([left]))
+            if not isinstance(right, GaussianSum):
+                right = GaussianSum(frozenset([right]))
+            return left + right
+
         # We make everything a Union to simplify the logic
         # We effectively 'invert' Unions so that sum of Unions becomes Union of Sums
         if not isinstance(left, Union):
@@ -222,9 +280,9 @@ class Sum(PExpr):
         sums = set()
         for lhs_value, rhs_value in itertools.product(left.values, right.values):
             if not isinstance(lhs_value, GaussianSum):
-                lhs_value = GaussianSum(FrozenMultiset([lhs_value]))
+                lhs_value = GaussianSum(frozenset([lhs_value]))
             if not isinstance(rhs_value, GaussianSum):
-                rhs_value = GaussianSum(FrozenMultiset([rhs_value]))
+                rhs_value = GaussianSum(frozenset([rhs_value]))
             sum_value = lhs_value + rhs_value
             sums.add(sum_value)
 
@@ -284,9 +342,48 @@ def merge_real_values_ignore_cond(t, f):
 def merge_real_values(cond, t, f):
     """
     Merge two RealValues (t and f) based on condition cond.
-    Returns a GaussianUnion with BDDs and deduplicated GaussianVariables.
-    Each formula[i] guards the corresponding values[i].
-    When the same value appears with different guards, the guards are ORed together.
+    If t or f is a GaussianSum, we 'invert' the Union to create a Union of Sums if this setting is enabled.
+    """
+    # If neither t nor f is a GaussianSum, we can use the simpler 'reduced' merging logic
+    if settings.union_of_sums or not (
+        isinstance(t, GaussianSum) or isinstance(f, GaussianSum)
+    ):
+        return merge_real_values_reduced(cond, t, f)
+
+    if isinstance(t, GaussianSum):
+        t_vals = t.rvs
+    else:
+        t_vals = [t]
+    if isinstance(f, GaussianSum):
+        f_vals = f.rvs
+    else:
+        f_vals = [f]
+
+    # Now we can merge each corresponding term in the Gaussian sums
+    sum_terms: dict[Union | GaussianVariable, int] = defaultdict(int)
+    for t_val, f_val in itertools.zip_longest(t_vals, f_vals):
+        t_val = t_val if t_val is not None else Zero()
+        f_val = f_val if f_val is not None else Zero()
+        merged_term = merge_real_values_reduced(cond, t_val, f_val)
+        if not isinstance(merged_term, Union):
+            raise TypeError(
+                "Merged term should be a Union when merging GaussianSum terms"
+            )
+        sum_terms[merged_term] += 1
+
+    merged_sum_terms = []
+    for term, count in sum_terms.items():
+        if count == 1:
+            merged_sum_terms.append(term)
+        else:
+            merged_sum_terms.append(term.apply_affine(count, 0.0))
+
+    return GaussianSum(frozenset(merged_sum_terms))
+
+
+def merge_real_values_reduced(cond, t, f):
+    """
+    Merge two RealValues (t and f) based on condition cond where t and f have been reduced i.e. have no GaussianSum terms..
     """
     # Extract formulae and values from t (then branch)
     if isinstance(t, RealVariable):
