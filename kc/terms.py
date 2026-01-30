@@ -114,6 +114,58 @@ class Rejection(Exception):
     pass
 
 
+def construct_flip_tree_rec(
+    values: Sequence[PExpr],
+    probs: Sequence[float],
+    flip_name: str,
+) -> PExpr:
+    if len(values) == 1:
+        return values[0]
+    else:
+        mid = len(values) // 2
+        left_probs = probs[:mid]
+        right_probs = probs[mid:]
+
+        left_total = sum(left_probs)
+        right_total = sum(right_probs)
+
+        left_normalized_probs = [p / left_total for p in left_probs]
+        right_normalized_probs = [p / right_total for p in right_probs]
+
+        left_subtree = construct_flip_tree_rec(
+            values[:mid], left_normalized_probs, f"{flip_name}_L"
+        )
+        right_subtree = construct_flip_tree_rec(
+            values[mid:], right_normalized_probs, f"{flip_name}_R"
+        )
+
+        return Let(
+            flip_name,
+            Flip(left_total),
+            IfThenElse(
+                Var(flip_name),
+                left_subtree,
+                right_subtree,
+            ),
+        )
+
+
+class Categorical(PExpr):
+    cls_counter = 0
+
+    def __new__(cls, values: Sequence[PExpr], probs: Sequence[float]) -> PExpr:
+        if len(values) != len(probs):
+            raise ValueError("Values and probabilities must have the same length")
+        normalized_probs = []
+        total = sum(probs)
+        for p in probs:
+            normalized_probs.append(p / total)
+
+        name = f"{cls.__name__}_{cls.cls_counter}"
+        cls.cls_counter += 1
+        return construct_flip_tree_rec(values, normalized_probs, name)
+
+
 @dataclass
 class Observe(PExpr):
     cond: PExpr
