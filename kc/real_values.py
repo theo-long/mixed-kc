@@ -1,5 +1,4 @@
 import itertools
-from numbers import Real
 import operator
 from abc import ABC, abstractmethod
 from collections import defaultdict
