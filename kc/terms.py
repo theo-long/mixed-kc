@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
 from kc.base import AExpr, PExpr
+from kc.config import settings
 from kc.real_values import (
+    GaussianSum,
     GaussianVariable,
     RealValue,
     Union,
@@ -180,28 +182,47 @@ class Observe(PExpr):
         return self.cond.collect_real_truncation(env, state)
 
 
+def nonsymbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"):
+    if isinstance(symbolic_value, GaussianVariable):
+        clause, _ = state.get_gaussian_variable_equality_expression(
+            symbolic_value.var, symbolic_value.scale, symbolic_value.shift, val
+        )
+    elif isinstance(symbolic_value, Union):
+        clause = state.get_gaussian_union_equality_expression(symbolic_value, val)
+    else:
+        raise ValueError(f"Unexpected type: {type(symbolic_value)}")
+
+    state._observes_all_hold = state._observes_all_hold & clause
+
+
+def symbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"):
+    if isinstance(symbolic_value, (GaussianVariable, GaussianSum)):
+        clause = state.get_gaussian_sum_symbolic_observe_expression(symbolic_value, val)
+    elif isinstance(symbolic_value, Union):
+        clause = state.get_gaussian_union_symbolic_observe_expression(
+            symbolic_value, val
+        )
+    else:
+        raise ValueError(f"Unexpected type: {type(symbolic_value)}")
+
+    state._observes_all_hold = state._observes_all_hold & clause
+
+
 @dataclass
 class ObserveReal(PExpr):
     symbolic_value: PExpr
     val: float
 
     def kc(self, env, state: "KCState"):
-        # Modify the self.observes_all_hold formula in some way...
-        # We want something like score(density(symbolic_value, val)),
-        #  where this density depends on which GaussianVariable symbolic_value
         symbolic_value = self.symbolic_value.kc(env, state)
-        if isinstance(symbolic_value, GaussianVariable):
-            clause, _ = state.get_gaussian_variable_equality_expression(
-                symbolic_value.var, symbolic_value.scale, symbolic_value.shift, self.val
-            )
-        elif isinstance(symbolic_value, Union):
-            clause = state.get_gaussian_union_equality_expression(
-                symbolic_value, self.val
-            )
+        if settings.symbolic_gaussians:
+            symbolic_observe_real(symbolic_value, self.val, state)
         else:
-            raise ValueError(f"Unexpected type: {type(symbolic_value)}")
-
-        state._observes_all_hold = state._observes_all_hold & clause
+            nonsymbolic_observe_real(
+                symbolic_value,
+                self.val,
+                state,
+            )
         return state.bdd.true
 
     def collect_real_truncation(self, env, state):

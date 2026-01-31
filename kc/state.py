@@ -11,7 +11,10 @@ from kc.config import settings
 from kc.real_values import (
     DistributionWithDensity,
     DistributionWithMoments,
+    GaussianSum,
+    GaussianVariable,
     Union,
+    Zero,
 )
 from kc.types import InequalityLiteral, WeightType, epsilon, inequality_flip_mapping
 
@@ -49,7 +52,60 @@ class KCState(RandomVariableCounter):
         self._observes_all_hold = self.bdd.true
         self.truncations = truncation_state.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
+        self.gaussian_vars = set[int]()
         super().__init__()
+
+    def add_gaussian_variable(self, var: int):
+        self.gaussian_vars.add(var)
+
+    def get_gaussian_union_symbolic_observe_expression(
+        self,
+        symbolic_value: Union[GaussianVariable | GaussianSum],
+        val: float,
+    ) -> _bdd._Ref:
+        union_clause = self.bdd.false
+        for f, v in zip(symbolic_value.formulae, symbolic_value.values):
+            # get the observe clause for this value
+            clause = self.get_gaussian_sum_symbolic_observe_expression(v, val)
+            guarded_clause = f & clause
+            union_clause = union_clause | guarded_clause
+        return union_clause
+
+    def _get_symbolic_observe_eq_node_name(
+        self, rvs: list[GaussianVariable], val: float
+    ):
+        rvs = sorted(rvs, key=lambda x: x.var)
+        vars_str = ",".join(f"{v.scale}*g{v.var}" for v in rvs)
+        return f"_{{{vars_str}}}={val}"
+
+    def get_gaussian_sum_symbolic_observe_expression(
+        self,
+        symbolic_value: GaussianVariable | GaussianSum,
+        val: float,
+    ) -> _bdd._Ref:
+        if isinstance(symbolic_value, GaussianVariable):
+            rvs = {symbolic_value}
+        else:
+            rvs = symbolic_value.rvs
+
+        # Move all shift terms into the value
+        new_vars = []
+        for v in rvs:
+            assert not isinstance(v, Zero)
+            val -= v.shift
+            new_vars.append(
+                GaussianVariable(
+                    var=v.var,
+                    scale=v.scale,
+                    shift=0.0,
+                )
+            )
+        node_name = self._get_symbolic_observe_eq_node_name(new_vars, val)
+        self.bdd.declare(node_name)
+        # Compute weight for equality node
+        # The weight is not a density but a *linear transformation* of the mean and covariance of the joint density
+        # TODO
+        raise NotImplementedError("Symbolic observe for Gaussian sums is not implemented yet")
 
     def _get_gaussian_pair_eq_node_name(self, var: int, other: int):
         # Need to sort so that we don't have separate nodes g1=g2 and g2=g1

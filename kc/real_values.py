@@ -70,6 +70,7 @@ class Gaussian(AExpr, DistributionWithDensity):
     def kc(self, env, state):
         var = state.next_variable(self)
         state.add_bdd_nodes_for_gaussian_variable(var)
+        state.add_gaussian_variable(var)
         return GaussianVariable(var)
 
     def collect_real_truncation(

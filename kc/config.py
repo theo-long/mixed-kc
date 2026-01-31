@@ -20,6 +20,7 @@ class Config(BaseSettings):
     union_of_sums: bool = (
         True  # Whether to use union of sums or sum of unions representation
     )
+    symbolic_gaussians: bool = True
     debug: bool = False
     single_observe_eps: bool = False
     transform_measures: bool = False
