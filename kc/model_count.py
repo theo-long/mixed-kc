@@ -29,7 +29,6 @@ def _model_count(
     right_count = _model_count(bdd, high, count, weights)
     (wpos, wneg) = weights[u.var]
     count[u] = wpos * right_count + wneg * left_count
-
     return count[u]
 
 
@@ -43,4 +42,7 @@ def model_count(
     count[bdd.true] = 1.0
     count[bdd.false] = 0.0
     weight = _model_count(bdd, u, count, weights)
-    return get_float_value(weight, priors)
+    return [
+        (get_float_value(likelihood, priors), posterior_update)
+        for likelihood, posterior_update in weight
+    ]

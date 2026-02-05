@@ -22,7 +22,6 @@ class Config(BaseSettings):
     )
     symbolic_gaussians: bool = True
     debug: bool = False
-    single_observe_eps: bool = False
     transform_measures: bool = False
 
 

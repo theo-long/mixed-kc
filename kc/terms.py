@@ -11,7 +11,7 @@ from kc.real_values import (
     merge_real_values,
     merge_real_values_ignore_cond,
 )
-from kc.types import InequalityLiteral
+from kc.types import InequalityLiteral, WeightType
 
 if TYPE_CHECKING:
     from kc.state import KCState, TruncationState
@@ -53,10 +53,14 @@ class Flip(PExpr):
         flip_id = state.next_flip()
         state.bdd.declare(f"flip_{flip_id}")
         if isinstance(self.prob, (float, int)):
-            state.set_weight(f"flip_{flip_id}", self.prob, 1.0 - self.prob)
+            prob_val = self.prob
         else:
             prob_val = self.prob.kc(env, state)
-            state.set_weight(f"flip_{flip_id}", prob_val, 1.0 - prob_val)
+        state.set_weight(
+            f"flip_{flip_id}",
+            WeightType.from_likelihood(prob_val, state.gaussian_count),
+            WeightType.from_likelihood(1.0 - prob_val, state.gaussian_count),
+        )
         return state.bdd.var(f"flip_{flip_id}")
 
     def collect_real_truncation(self, env, state: "TruncationState"):

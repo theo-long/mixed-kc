@@ -8,15 +8,22 @@ import dd.autoref as _bdd
 import sympy
 
 from kc.config import settings
+from kc.gaussian_updates import create_observation_vector
 from kc.real_values import (
     DistributionWithDensity,
     DistributionWithMoments,
+    Gaussian,
     GaussianSum,
     GaussianVariable,
     Union,
     Zero,
 )
-from kc.types import InequalityLiteral, WeightType, epsilon, inequality_flip_mapping
+from kc.types import (
+    InequalityLiteral,
+    WeightType,
+    epsilon,
+    inequality_flip_mapping,
+)
 
 
 class RandomVariableCounter:
@@ -28,6 +35,13 @@ class RandomVariableCounter:
         self.rv_counter += 1
         self.rvs[self.rv_counter] = rv
         return self.rv_counter
+
+    def variable_count(self, variable_type: type):
+        count = 0
+        for rv in self.rvs.values():
+            if isinstance(rv, variable_type):
+                count += 1
+        return count
 
 
 class TruncationState(RandomVariableCounter):
@@ -47,12 +61,13 @@ class KCState(RandomVariableCounter):
         self.bdd = _bdd.BDD()
         self.flips = 0
         self.flip_params = 0
-        self.weights: dict[int, tuple[WeightType, int | float | WeightType]] = {}
+        self.weights: dict[int, tuple[WeightType, WeightType]] = {}
         self.priors: dict[sympy.Symbol, DistributionWithMoments] = {}
         self._observes_all_hold = self.bdd.true
         self.truncations = truncation_state.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
         self.gaussian_vars = set[int]()
+        self.gaussian_count = truncation_state.variable_count(Gaussian)
         super().__init__()
 
     def add_gaussian_variable(self, var: int):
@@ -102,24 +117,15 @@ class KCState(RandomVariableCounter):
             )
         node_name = self._get_symbolic_observe_eq_node_name(new_vars, val)
         self.bdd.declare(node_name)
-        # Compute weight for equality node
-        # The weight is not a density but a *linear transformation* of the mean and covariance of the joint density
-        # TODO
-        raise NotImplementedError("Symbolic observe for Gaussian sums is not implemented yet")
-
-    def _get_gaussian_pair_eq_node_name(self, var: int, other: int):
-        # Need to sort so that we don't have separate nodes g1=g2 and g2=g1
-        first, second = min(var, other), max(var, other)
-        return f"_g{first}=g{second}"
-
-    def get_gaussian_variable_pair_equality_expression(self, var: int, other: int):
-        assert not settings.single_observe_eps, (
-            "This function should only be called when `single_observe_eps=False`"
+        assert isinstance(rvs, set), f"type not supported in observe sum : {rvs}"
+        self.set_weight(
+            node_name,
+            WeightType(
+                [(epsilon, create_observation_vector(rvs, val, self.gaussian_count))]
+            ),
+            WeightType.from_likelihood(1.0, self.gaussian_count),
         )
-        node = self._get_gaussian_pair_eq_node_name(var, other)
-        self.bdd.declare(node)
-        self.set_weight(node, epsilon, 1.0)
-        return self.bdd.var(node)
+        return self.bdd.var(node_name)
 
     def get_gaussian_union_equality_expression(
         self,
@@ -139,20 +145,7 @@ class KCState(RandomVariableCounter):
         guarded_clause = self.bdd.false
         for i in range(len(symbolic_value.values)):
             clause = unguarded_clauses[i]
-            # In the case where single_observe_eps, this is handled automatically by the eps logic
-            # since the double equality setting will have weight eps^2, single equality weight eps
-            if not settings.single_observe_eps:
-                # For equality, we need to ensure that only one of the equality clauses is true
-                # This is to ensure that the density is only counted once
-                for j in range(len(symbolic_value.values)):
-                    if i != j:
-                        clause = clause & (
-                            ~equality_nodes[j]
-                            | self.get_gaussian_variable_pair_equality_expression(
-                                symbolic_value.values[i].var,
-                                symbolic_value.values[j].var,
-                            )
-                        )
+
             # Add formula guarding this value to the clause
             clause = clause & symbolic_value.formulae[i]
             guarded_clause = guarded_clause | clause
@@ -202,11 +195,14 @@ class KCState(RandomVariableCounter):
         weight = self.rvs[var].pdf(val) / (
             self.rvs[var].cdf(upper) - self.rvs[var].cdf(lower)
         )
-        if settings.single_observe_eps:
-            weight = weight * epsilon  # type: ignore
+        weight = weight * epsilon  # type: ignore
         if settings.transform_measures:
             weight /= scale
-        self.set_weight(equality_node_name, weight, 1.0)
+        self.set_weight(
+            equality_node_name,
+            WeightType.from_likelihood(weight, self.gaussian_count),
+            WeightType.from_likelihood(1.0, self.gaussian_count),
+        )
         self.bdd_equality_nodes[var].add(equality_node_name)
         return self.bdd.var(equality_node_name)
 
@@ -234,7 +230,12 @@ class KCState(RandomVariableCounter):
             flip_prob = (rv.cdf(upper) - rv.cdf(lower)) / remaining_probability_mass
 
             # Set weights: true weight = probability of being in interval
-            self.set_weight(interval_node_name, flip_prob, 1.0 - flip_prob)
+
+            self.set_weight(
+                interval_node_name,
+                WeightType.from_likelihood(flip_prob, self.gaussian_count),
+                WeightType.from_likelihood(1.0 - flip_prob, self.gaussian_count),
+            )
 
         return sorted_thresholds
 

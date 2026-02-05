@@ -240,6 +240,10 @@ This data can then be used to truncate all the Gaussian variables as above, wher
             - then combine moments as weighted sum
 - IfThenElse optimization where if we know cond is actually false/true we can skip a branch
     - is this handled by laziness somehow?
+- Can we add mutually incompatible *affine* observes?
+    - For d-dimensional gaussian latent, mutually incompatible group is d + 1 observes that are linearly independent
+    - naive/brute force: enumerate all d + 1 subsets and check for lin. indep.
+    - alternative: some kind of data structure that captures lin. indep. relations to efficiently construct
 
 ## Ideas
 - Adding in continuous latents that are conjugate
