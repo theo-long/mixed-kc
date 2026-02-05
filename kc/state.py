@@ -104,7 +104,7 @@ class KCState(RandomVariableCounter):
             rvs = symbolic_value.rvs
 
         # Move all shift terms into the value
-        new_vars = []
+        new_vars: list[GaussianVariable] = []
         for v in rvs:
             assert not isinstance(v, Zero)
             val -= v.shift
@@ -115,13 +115,18 @@ class KCState(RandomVariableCounter):
                     shift=0.0,
                 )
             )
+
         node_name = self._get_symbolic_observe_eq_node_name(new_vars, val)
         self.bdd.declare(node_name)
-        assert isinstance(rvs, set), f"type not supported in observe sum : {rvs}"
         self.set_weight(
             node_name,
             WeightType(
-                [(epsilon, create_observation_vector(rvs, val, self.gaussian_count))]
+                [
+                    (
+                        epsilon,
+                        create_observation_vector(new_vars, val, self.gaussian_count),
+                    )
+                ]
             ),
             WeightType.from_likelihood(1.0, self.gaussian_count),
         )
