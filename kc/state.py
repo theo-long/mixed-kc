@@ -3,7 +3,6 @@ import itertools
 import operator
 from collections import defaultdict
 from functools import reduce
-from typing import Collection
 
 import dd.autoref as _bdd
 import numpy as np
