@@ -73,7 +73,7 @@ class Gaussian(AExpr, DistributionWithDensity):
         state.add_gaussian_variable(var)
         # TODO - should we have this return a GaussianSum with a single variable?
         # that way we don't need to handle wrapping/unwrapping GaussianVariables elsewhere
-        return GaussianVariable(var)
+        return GaussianVariable(var, scale=self.std, shift=self.mean)
 
     def collect_real_truncation(
         self, env: dict[str, PExpr], state: "TruncationState"
