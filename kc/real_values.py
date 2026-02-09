@@ -79,7 +79,7 @@ class Gaussian(AExpr, DistributionWithDensity):
         self, env: dict[str, PExpr], state: "TruncationState"
     ) -> Any:
         var = state.next_variable(self)
-        return GaussianVariable(var)
+        return GaussianVariable(var, scale=self.std, shift=self.mean)
 
     def pdf(self, val):
         return norm.pdf(val, loc=self.mean, scale=self.std).item()
