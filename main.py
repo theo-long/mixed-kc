@@ -801,13 +801,13 @@ p30 = Let(
                         Sum(Var("x"), Var("y")),
                         Sum(Var("x"), Var("z")),
                     ),
-                    Let("_", ObserveReal(Var("Result"), 0.0), Var("b")),
+                    Let("_", ObserveReal(Var("result"), 0.0), Var("b")),
                 ),
             ),
         ),
     ),
 )
-expected_p30 = None
+expected_p30 = 0.42356749843592556
 
 
 def main():
@@ -845,6 +845,7 @@ def main():
         ("p27", p27, expected_p27),
         ("p28", p28, expected_p28),
         ("p29", p29, expected_p29),
+        ("p30", p30, expected_p30),
     ]:
         count += 1
         print(f"--- {name} ---")
