@@ -849,7 +849,10 @@ def main():
         count += 1
         print(f"--- {name} ---")
         prob, normalizing_constant = run_kc(program)
-        if prob != expected_prob and abs(prob - expected_prob) > tol:
+        if (
+            prob != expected_prob
+            and abs((prob or -1.0) - (expected_prob or -2.0)) > tol
+        ):
             print("### ERROR ###")
             errors += 1
         print(

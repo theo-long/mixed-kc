@@ -55,7 +55,10 @@ class WeightType(list[tuple[LikelihoodType, PosteriorUpdateType]]):
             # and merge
             added = False
             for i in range(len(new_weight_update)):
-                if np.allclose(new_weight_update[i][1], posterior_update):
+                shape_match = new_weight_update[i][1].shape == posterior_update.shape
+                if shape_match and np.allclose(
+                    new_weight_update[i][1], posterior_update
+                ):
                     new_weight_update[i] = (
                         new_weight_update[i][0] + likelihood,  # type:ignore
                         new_weight_update[i][1],
