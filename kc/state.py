@@ -135,7 +135,7 @@ class KCState(RandomVariableCounter):
             WeightType(
                 [
                     (
-                        epsilon,
+                        1.0,
                         self.create_observation_vector(new_vars, val),
                     )
                 ]

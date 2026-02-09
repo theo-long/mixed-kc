@@ -7,6 +7,7 @@ from kc.config import settings
 from kc.model_count import model_count
 from kc.real_values import GaussianSum, Zero
 from kc.state import KCState, TruncationState
+from kc.types import epsilon, get_float_value
 
 
 def get_gaussian_posterior(mu: NDArray, cov: NDArray, A: NDArray, b: NDArray):
@@ -100,9 +101,15 @@ def run_kc(expr: PExpr):
     for likelihood, posterior_updates in posterior_update_mixture:
         A, b = posterior_updates[:, 1:], posterior_updates[:, :1]
         log_gaussian_score = log_score_singular(mu, cov, A, b)
-        normalizing_constant += likelihood * np.exp(log_gaussian_score)
+        normalizing_constant += (
+            likelihood * np.exp(log_gaussian_score) * (epsilon ** b.shape[0])
+        )
         mu_posterior, cov_posterior = get_gaussian_posterior(mu, cov, A, b)
         posterior_mixture.append((likelihood, (mu_posterior, cov_posterior)))
+
+    if settings.debug:
+        print("Normalizing constant pre-simplification:", normalizing_constant)
+    normalizing_constant = get_float_value(normalizing_constant, {})
 
     if normalizing_constant == 0:
         return None, normalizing_constant
@@ -124,7 +131,13 @@ def run_kc(expr: PExpr):
         for likelihood, posterior_updates in posterior_mixture_with_val:
             A, b = posterior_updates[:, 1:], posterior_updates[:, :1]
             log_gaussian_score = log_score_singular(mu, cov, A, b)
-            unnormalized_prob += likelihood * np.exp(log_gaussian_score)
+            unnormalized_prob += (
+                likelihood * np.exp(log_gaussian_score) * (epsilon ** b.shape[0])
+            )
+
+        if settings.debug:
+            print("Unnormalized prob pre-simplification:", unnormalized_prob)
+        unnormalized_prob = get_float_value(unnormalized_prob, {})
 
         return (unnormalized_prob / normalizing_constant, normalizing_constant)
     elif isinstance(val, GaussianSum):

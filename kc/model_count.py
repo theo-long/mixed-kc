@@ -31,10 +31,7 @@ def _model_count(
     left_count = _model_count(bdd, low, count, weights)
     right_count = _model_count(bdd, high, count, weights)
     (wpos, wneg) = weights[u.var]
-    try:
-        count[u] = wpos * right_count + wneg * left_count
-    except Exception:
-        from IPython import embed; embed()
+    count[u] = wpos * right_count + wneg * left_count
     return count[u]
 
 
