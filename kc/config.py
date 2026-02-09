@@ -22,7 +22,7 @@ class Config(BaseSettings):
     )
     symbolic_gaussians: bool = True
     debug: bool = False
-    transform_measures: bool = False
+    transform_measures: bool = True
 
 
 settings = Config()
