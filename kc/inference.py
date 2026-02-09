@@ -99,12 +99,7 @@ def run_kc(expr: PExpr):
     posterior_mixture: list[tuple[float, tuple[NDArray, NDArray]]] = []
     for likelihood, posterior_updates in posterior_update_mixture:
         A, b = posterior_updates[:, 1:], posterior_updates[:, :1]
-        try:
-            log_gaussian_score = log_score_singular(mu, cov, A, b)
-        except Exception:
-            from IPython import embed
-
-            embed()
+        log_gaussian_score = log_score_singular(mu, cov, A, b)
         normalizing_constant += likelihood * np.exp(log_gaussian_score)
         mu_posterior, cov_posterior = get_gaussian_posterior(mu, cov, A, b)
         posterior_mixture.append((likelihood, (mu_posterior, cov_posterior)))
