@@ -3,12 +3,13 @@ import itertools
 import operator
 from collections import defaultdict
 from functools import reduce
+from typing import Collection
 
 import dd.autoref as _bdd
+import numpy as np
 import sympy
 
 from kc.config import settings
-from kc.gaussian_updates import create_observation_vector
 from kc.real_values import (
     DistributionWithDensity,
     DistributionWithMoments,
@@ -93,6 +94,18 @@ class KCState(RandomVariableCounter):
         vars_str = ",".join(f"{v.scale}*g{v.var}" for v in rvs)
         return f"_{{{vars_str}}}={val}"
 
+    def create_observation_vector(
+        self,
+        vars: list["GaussianVariable"],
+        val: float,
+    ):
+        """Create a numpy array representing observation v^T x = val"""
+        v = np.zeros((1, self.gaussian_count + 1))
+        for var in vars:
+            v[0, var.var] = var.scale
+        v[0, 0] = val
+        return v
+
     def get_gaussian_sum_symbolic_observe_expression(
         self,
         symbolic_value: GaussianVariable | GaussianSum,
@@ -124,7 +137,7 @@ class KCState(RandomVariableCounter):
                 [
                     (
                         epsilon,
-                        create_observation_vector(new_vars, val, self.gaussian_count),
+                        self.create_observation_vector(new_vars, val),
                     )
                 ]
             ),

@@ -15,16 +15,19 @@ def is_negated(u: _bdd.Function) -> bool:
 
 def _model_count(
     bdd: _bdd.BDD,
-    u: _bdd.Function,
-    count: dict[int, WeightType],
+    u: _bdd.Function | _bdd._Ref,
+    count: dict[_bdd._Ref, WeightType],
     weights: dict[int, tuple[WeightType, WeightType]],
 ):
     if u in count:
         return count[u]
+    if u.low is None or u.high is None:
+        raise ValueError("Found none type for bdd node child")
     if is_negated(u):
         low, high = (~u.low, ~u.high)
     else:
         low, high = (u.low, u.high)
+
     left_count = _model_count(bdd, low, count, weights)
     right_count = _model_count(bdd, high, count, weights)
     (wpos, wneg) = weights[u.var]
@@ -35,12 +38,13 @@ def _model_count(
 def model_count(
     bdd: _bdd.BDD,
     u: _bdd.Function,
+    latent_dim: int,
     weights: dict[int, tuple[WeightType, WeightType]],
     priors: dict[sympy.Symbol, "DistributionWithMoments"],
 ):
-    count = dict()
-    count[bdd.true] = 1.0
-    count[bdd.false] = 0.0
+    count: dict[_bdd._Ref, WeightType] = dict()
+    count[bdd.true] = WeightType.from_likelihood(1.0, latent_dim)
+    count[bdd.false] = WeightType.from_likelihood(0.0, latent_dim)
     weight = _model_count(bdd, u, count, weights)
     return [
         (get_float_value(likelihood, priors), posterior_update)
