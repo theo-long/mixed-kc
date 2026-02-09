@@ -93,8 +93,8 @@ def run_kc(expr: PExpr):
     )
     normalizing_constant = 0.0
     mu, cov = (
-        np.ones((state.gaussian_count, 1)),
-        np.ones((state.gaussian_count, state.gaussian_count)),
+        np.zeros((state.gaussian_count, 1)),
+        np.eye(state.gaussian_count),
     )
     posterior_mixture: list[tuple[float, tuple[NDArray, NDArray]]] = []
     for likelihood, posterior_updates in posterior_update_mixture:
@@ -118,8 +118,8 @@ def run_kc(expr: PExpr):
         )
         unnormalized_prob = 0.0
         mu, cov = (
-            np.ones((state.gaussian_count, 1)),
-            np.ones((state.gaussian_count, state.gaussian_count)),
+            np.zeros((state.gaussian_count, 1)),
+            np.eye(state.gaussian_count),
         )
         for likelihood, posterior_updates in posterior_mixture_with_val:
             A, b = posterior_updates[:, 1:], posterior_updates[:, :1]
