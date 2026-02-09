@@ -140,3 +140,6 @@ def run_kc(expr: PExpr):
             normalized_posterior.append(
                 (weight / normalizing_constant, (expr_mu, expr_cov))
             )
+        return normalized_posterior, normalizing_constant
+    else:
+        raise TypeError(f"Cannot perform inference for value of type {type(val)}")
