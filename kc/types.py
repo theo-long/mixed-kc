@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Literal, Self
 import numpy as np
 import sympy
 from numpy.typing import NDArray
+from scipy.linalg import qr
 
 if TYPE_CHECKING:
     from kc.real_values import DistributionWithMoments
@@ -23,11 +24,20 @@ class WeightType(list[tuple[LikelihoodType, PosteriorUpdateType]]):
         new_weight_update = WeightType()
         for left, right in itertools.product(self, other):
             likelihood = left[0] * right[0]  # type: ignore
+            posterior_update = np.vstack((left[1], right[1]))
+
+            # see if there are any linearly *dependent* observes, in which case we can reduce
+            # the number of rows in the posterior update matrix
+            # TODO: more efficient way to do this?
+            _, R, P = qr(posterior_update.T, pivoting=True)  # type: ignore
+            tol = 1e-10
+            r = np.sum(np.abs(np.diag(R)) > tol)
+            independent_rows_indices = P[:r]
+            posterior_update = posterior_update[independent_rows_indices]
 
             # Sort by columns (from last to first for lexsort logic)
             # This sorts by Column 0, then Column 1, etc.
             # TODO: resorting each time is slow (nlogn), just do a merge (n)
-            posterior_update = np.vstack((left[1], right[1]))
             indices = np.lexsort(
                 [
                     posterior_update[:, i]
@@ -39,9 +49,6 @@ class WeightType(list[tuple[LikelihoodType, PosteriorUpdateType]]):
             # TODO: add check to see if all posterior updates are mutually compatible
             # if not, we can set the likelihood to 0 (and even add some kind of termination symbol for post. update)
             # maybe we can just remove this element from the list?
-
-            # TODO: see if there are any linearly *dependent* observes, in which case we can reduce
-            # the number of rows in the posterior update matrix
 
             # Check if there is existing matching posterior update
             # TODO: this loop makes it N^2! Use something faster where we sort the posteriors
@@ -66,7 +73,10 @@ class WeightType(list[tuple[LikelihoodType, PosteriorUpdateType]]):
         for likelihood, posterior_update in itertools.chain(self, other):
             added = False
             for i in range(len(new_weight_update)):
-                if np.allclose(new_weight_update[i][1], posterior_update):
+                shape_match = new_weight_update[i][1].shape == posterior_update.shape
+                if shape_match and np.allclose(
+                    new_weight_update[i][1], posterior_update
+                ):
                     new_weight_update[i] = (
                         new_weight_update[i][0] + likelihood,  # type:ignore
                         new_weight_update[i][1],
