@@ -2,12 +2,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
 from kc.base import AExpr, PExpr
-from kc.config import settings
 from kc.real_values import (
     GaussianSum,
     GaussianVariable,
-    TruncatableGaussianVariable,
     RealValue,
+    TruncatableGaussianVariable,
     Union,
     merge_real_values,
     merge_real_values_ignore_cond,
