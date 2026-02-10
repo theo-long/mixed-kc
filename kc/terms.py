@@ -6,6 +6,7 @@ from kc.config import settings
 from kc.real_values import (
     GaussianSum,
     GaussianVariable,
+    TruncatableGaussianVariable,
     RealValue,
     Union,
     merge_real_values,
@@ -219,14 +220,14 @@ class ObserveReal(PExpr):
 
     def kc(self, env, state: "KCState"):
         symbolic_value = self.symbolic_value.kc(env, state)
-        if settings.symbolic_gaussians:
-            symbolic_observe_real(symbolic_value, self.val, state)
-        else:
+        if getattr(symbolic_value, "truncatable", False):
             nonsymbolic_observe_real(
                 symbolic_value,
                 self.val,
                 state,
             )
+        else:
+            symbolic_observe_real(symbolic_value, self.val, state)
         return state.bdd.true
 
     def collect_real_truncation(self, env, state):
@@ -241,7 +242,7 @@ class Inequality(PExpr):
 
     def kc(self, env, state: "KCState"):
         symbolic_value = self.symbolic_value.kc(env, state)
-        if isinstance(symbolic_value, GaussianVariable):
+        if isinstance(symbolic_value, TruncatableGaussianVariable):
             clause = state.get_gaussian_variable_inequality_expression(
                 symbolic_value.var,
                 symbolic_value.scale,
@@ -250,6 +251,11 @@ class Inequality(PExpr):
                 self.val,
             )
         elif isinstance(symbolic_value, Union):
+            if not all(
+                isinstance(v, TruncatableGaussianVariable)
+                for v in symbolic_value.values
+            ):
+                raise ValueError("Can only truncate TruncatableGaussian")
             clause = state.get_gaussian_union_inequality_expression(
                 symbolic_value, self.inequality, self.val
             )
@@ -259,17 +265,21 @@ class Inequality(PExpr):
 
     def collect_real_truncation(self, env, state):
         symbolic_value = self.symbolic_value.collect_real_truncation(env, state)
-
-        if isinstance(symbolic_value, GaussianVariable):
+        if isinstance(symbolic_value, TruncatableGaussianVariable):
             state.add_truncation(
                 symbolic_value.var, symbolic_value.scale, symbolic_value.shift, self.val
             )
         elif isinstance(symbolic_value, Union):
+            if not all(
+                isinstance(v, TruncatableGaussianVariable)
+                for v in symbolic_value.values
+            ):
+                raise ValueError("Can only truncate TruncatableGaussian")
             for gv in symbolic_value.values:
                 state.add_truncation(gv.var, gv.scale, gv.shift, self.val)
         else:
             raise TypeError(
-                f"Unexpected type for symbolic_value: {type(self.symbolic_value)}"
+                f"Unexpected type for symbolic_value: {type(symbolic_value)}"
             )
 
         return

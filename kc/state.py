@@ -66,12 +66,8 @@ class KCState(RandomVariableCounter):
         self._observes_all_hold = self.bdd.true
         self.truncations = truncation_state.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
-        self.gaussian_vars = set[int]()
         self.gaussian_count = truncation_state.variable_count(Gaussian)
         super().__init__()
-
-    def add_gaussian_variable(self, var: int):
-        self.gaussian_vars.add(var)
 
     def get_gaussian_union_symbolic_observe_expression(
         self,

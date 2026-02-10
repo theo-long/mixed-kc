@@ -69,8 +69,6 @@ class Gaussian(AExpr, DistributionWithDensity):
 
     def kc(self, env, state):
         var = state.next_variable(self)
-        state.add_bdd_nodes_for_gaussian_variable(var)
-        state.add_gaussian_variable(var)
         # TODO - should we have this return a GaussianSum with a single variable?
         # that way we don't need to handle wrapping/unwrapping GaussianVariables elsewhere
         return GaussianVariable(var, scale=self.std, shift=self.mean)
@@ -80,6 +78,29 @@ class Gaussian(AExpr, DistributionWithDensity):
     ) -> Any:
         var = state.next_variable(self)
         return GaussianVariable(var, scale=self.std, shift=self.mean)
+
+    def pdf(self, val):
+        return norm.pdf(val, loc=self.mean, scale=self.std).item()
+
+    def cdf(self, val):
+        return norm.cdf(val, loc=self.mean, scale=self.std).item()
+
+
+@dataclass
+class TruncatableGaussian(AExpr, DistributionWithDensity):
+    mean: float
+    std: float
+
+    def kc(self, env, state):
+        var = state.next_variable(self)
+        state.add_bdd_nodes_for_gaussian_variable(var)
+        return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
+
+    def collect_real_truncation(
+        self, env: dict[str, PExpr], state: "TruncationState"
+    ) -> Any:
+        var = state.next_variable(self)
+        return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
 
     def pdf(self, val):
         return norm.pdf(val, loc=self.mean, scale=self.std).item()
@@ -134,6 +155,25 @@ class GaussianVariable(RealVariable, AffineTransformable):
             raise ValueError("Cannot add GaussianVariables with different vars")
 
 
+class Truncatable:
+    @property
+    def truncatable(self):
+        return True
+
+
+@dataclass(eq=True, frozen=True)
+class TruncatableGaussianVariable(GaussianVariable, Truncatable):
+    def apply_affine(self, scale: float, shift: float):
+        if scale == 0.0:
+            return Zero()
+        new_scale = self.scale * scale
+        new_shift = self.shift * scale + shift
+        return TruncatableGaussianVariable(self.var, new_scale, new_shift)
+    
+    def __add__(self, other) -> GaussianVariable:
+        raise TypeError("Cannot add TruncatableGaussianVariables")
+
+
 @dataclass(eq=True, frozen=True)
 class BetaVariable(RealVariable):
     var: int
@@ -161,6 +201,10 @@ class Union[T](RealValue, AffineTransformable):
         )
         new_values = [var.apply_affine(scale, shift) for var in self.values]  # type: ignore
         return Union(self.formulae, tuple(new_values))
+
+    @property
+    def truncatable(self):
+        return all(getattr(v, "truncatable") for v in self.values)
 
 
 @dataclass(frozen=True, eq=True)

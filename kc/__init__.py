@@ -5,6 +5,7 @@ from .real_values import (
     Beta,
     Gaussian,
     Sum,
+    TruncatableGaussian,
 )
 from .terms import (
     Const,
@@ -30,6 +31,7 @@ __all__ = [
     "Var",
     "Affine",
     "Beta",
+    "TruncatableGaussian",
     "Gaussian",
     "Sum",
 ]

@@ -3,6 +3,7 @@ from kc import (
     Beta,
     Const,
     Flip,
+    TruncatableGaussian,
     Gaussian,
     IfThenElse,
     Inequality,
@@ -158,7 +159,7 @@ expected_p6 = 0.0
 # (Note that the expression has to evaluate to a boolean, we use Flip(0.5) as a dummy boolean)
 p7 = Let(
     "x",
-    Gaussian(0, 1),
+    TruncatableGaussian(0, 1),
     Let(
         "_",
         Observe(Inequality(Var("x"), "<=", 1.0)),
@@ -175,7 +176,7 @@ p8 = Let(
     Flip(0.5),
     Let(
         "x",
-        IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
+        IfThenElse(Var("b"), TruncatableGaussian(0, 1), TruncatableGaussian(0, 10)),
         Let(
             "_",
             Observe(Inequality(Var("x"), "<=", 1.0)),  # Observe that x <= 1.0
@@ -198,7 +199,7 @@ p9 = Let(
     Flip(0.5),
     Let(
         "x",
-        IfThenElse(Var("b"), Gaussian(0, 1), Gaussian(0, 10)),
+        IfThenElse(Var("b"), TruncatableGaussian(0, 1), TruncatableGaussian(0, 10)),
         Let(
             "_",
             Observe(Inequality(Var("x"), ">", 1.0)),  # Observe that x <= 1.0
@@ -218,8 +219,8 @@ p10 = Let(
         "x",
         IfThenElse(
             Var("b"),
-            Gaussian(0, 1),
-            Gaussian(0, 2),
+            TruncatableGaussian(0, 1),
+            TruncatableGaussian(0, 2),
         ),
         Let(
             "_",
@@ -279,7 +280,7 @@ p12 = Let(
         Flip(0.5),
         Let(
             "g1",
-            Gaussian(0, 1),
+            TruncatableGaussian(0, 1),
             Let(
                 "_",
                 Observe(Inequality(Var("g1"), ">", 0.0)),
@@ -288,7 +289,7 @@ p12 = Let(
                     IfThenElse(
                         Var("flip_1"),
                         Var("g1"),
-                        Gaussian(0, 1),
+                        TruncatableGaussian(0, 1),
                     ),
                     Let(
                         "_",
@@ -298,7 +299,7 @@ p12 = Let(
                             IfThenElse(
                                 Var("flip_2"),
                                 Var("g1 or g2"),
-                                Gaussian(0, 1),
+                                TruncatableGaussian(0, 1),
                             ),
                             Let(
                                 "_",
@@ -619,7 +620,7 @@ expected_p21 = gaussian_pdf(0, 1, 1) / (gaussian_pdf(0, 1, 0.5) + gaussian_pdf(0
 # Same as above, but now we observe that the pair is > 1.
 p21 = Let(
     "g",
-    Gaussian(0, 1),
+    TruncatableGaussian(0, 1),
     Let(
         "b",
         Flip(0.5),
@@ -713,7 +714,7 @@ expected_p26 = None
 # What is prob it is > 0?
 p27 = Let(
     "g",
-    Gaussian(0, 1),
+    TruncatableGaussian(0, 1),
     Let(
         "g_transformed",
         IfThenElse(
@@ -760,10 +761,10 @@ p29 = Let(
     Flip(0.5),
     Let(
         "g1",
-        Gaussian(0, 1),
+        TruncatableGaussian(0, 1),
         Let(
             "g2",
-            Gaussian(0, 1),
+            TruncatableGaussian(0, 1),
             Let(
                 "result",
                 IfThenElse(
