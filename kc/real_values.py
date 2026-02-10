@@ -79,6 +79,12 @@ class Gaussian(AExpr, DistributionWithDensity):
         var = state.next_variable(self)
         return GaussianVariable(var, scale=self.std, shift=self.mean)
 
+    def pdf(self, val):
+        return norm.pdf(val, loc=0, scale=1).item()
+
+    def cdf(self, val):
+        return norm.cdf(val, loc=0, scale=1).item()
+
 
 @dataclass
 class TruncatableGaussian(AExpr, DistributionWithDensity):

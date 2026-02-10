@@ -230,6 +230,7 @@ class ObserveReal(PExpr):
         return state.bdd.true
 
     def collect_real_truncation(self, env, state):
+        self.symbolic_value.collect_real_truncation(env, state)
         return
 
 
