@@ -5,7 +5,7 @@ from numpy.typing import NDArray
 from kc.base import PExpr
 from kc.config import settings
 from kc.model_count import model_count
-from kc.real_values import GaussianSum, Zero
+from kc.real_values import GaussianSum, GaussianVariable, Zero
 from kc.state import KCState, TruncationState
 from kc.types import epsilon, get_float_value
 
@@ -31,8 +31,8 @@ def get_gaussian_posterior(mu: NDArray, cov: NDArray, A: NDArray, b: NDArray):
 
 
 def get_expr_distribution(mu, cov, v, b):
-    y_mean = v.T @ mu + b
-    y_cov = v.T @ cov @ v
+    y_mean = v @ mu + b
+    y_cov = v @ cov @ v.T
     return (y_mean, y_cov)
 
 
@@ -113,6 +113,9 @@ def run_kc(expr: PExpr):
 
     if normalizing_constant == 0:
         return None, normalizing_constant
+
+    if isinstance(val, GaussianVariable):
+        val = GaussianSum(frozenset({val}))
 
     # Inference for binary variable
     if isinstance(val, _bdd.Function):
