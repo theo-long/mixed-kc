@@ -18,7 +18,7 @@ PosteriorUpdateType = NDArray
 class WeightType(list[tuple[LikelihoodType, PosteriorUpdateType]]):
     @classmethod
     def from_likelihood(cls, likelihood: LikelihoodType, latent_dim: int):
-        return cls([(likelihood, np.zeros((1, latent_dim + 1)))])
+        return cls([(likelihood, np.zeros((0, latent_dim + 1)))])
 
     def __mul__(self, other: Self):  # type: ignore
         new_weight_update = WeightType()

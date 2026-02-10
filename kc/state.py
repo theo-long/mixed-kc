@@ -219,7 +219,7 @@ class KCState(RandomVariableCounter):
         self.bdd_equality_nodes[var].add(equality_node_name)
         return self.bdd.var(equality_node_name)
 
-    def add_bdd_nodes_for_gaussian_variable(self, var: int):
+    def add_bdd_nodes_for_gaussian_variable(self, var: int, scale: float, shift: float):
         # Get Gaussian parameters
         rv = self.rvs[var]
         sorted_thresholds = sorted(self.truncations.get(var, set()))

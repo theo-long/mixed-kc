@@ -79,12 +79,6 @@ class Gaussian(AExpr, DistributionWithDensity):
         var = state.next_variable(self)
         return GaussianVariable(var, scale=self.std, shift=self.mean)
 
-    def pdf(self, val):
-        return norm.pdf(val, loc=self.mean, scale=self.std).item()
-
-    def cdf(self, val):
-        return norm.cdf(val, loc=self.mean, scale=self.std).item()
-
 
 @dataclass
 class TruncatableGaussian(AExpr, DistributionWithDensity):
@@ -93,7 +87,7 @@ class TruncatableGaussian(AExpr, DistributionWithDensity):
 
     def kc(self, env, state):
         var = state.next_variable(self)
-        state.add_bdd_nodes_for_gaussian_variable(var)
+        state.add_bdd_nodes_for_gaussian_variable(var, scale=self.std, shift=self.mean)
         return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
 
     def collect_real_truncation(
@@ -103,10 +97,10 @@ class TruncatableGaussian(AExpr, DistributionWithDensity):
         return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
 
     def pdf(self, val):
-        return norm.pdf(val, loc=self.mean, scale=self.std).item()
+        return norm.pdf(val, loc=0, scale=1).item()
 
     def cdf(self, val):
-        return norm.cdf(val, loc=self.mean, scale=self.std).item()
+        return norm.cdf(val, loc=0, scale=1).item()
 
 
 class RealValue(ABC):
@@ -169,7 +163,7 @@ class TruncatableGaussianVariable(GaussianVariable, Truncatable):
         new_scale = self.scale * scale
         new_shift = self.shift * scale + shift
         return TruncatableGaussianVariable(self.var, new_scale, new_shift)
-    
+
     def __add__(self, other) -> GaussianVariable:
         raise TypeError("Cannot add TruncatableGaussianVariables")
 

@@ -176,16 +176,17 @@ p8 = Let(
     Flip(0.5),
     Let(
         "x",
-        IfThenElse(Var("b"), TruncatableGaussian(0, 1), TruncatableGaussian(0, 10)),
+        IfThenElse(Var("b"), TruncatableGaussian(-2, 1), TruncatableGaussian(-2, 10)),
         Let(
             "_",
-            Observe(Inequality(Var("x"), "<=", 1.0)),  # Observe that x <= 1.0
+            Observe(Inequality(Var("x"), "<=", -1.0)),  # Observe that x <= -1.0
             Let(
-                "_", Observe(Inequality(Var("x"), ">", 0.0)), Var("b")
-            ),  # Observe that x > 0.0
+                "_", Observe(Inequality(Var("x"), ">", -2.0)), Var("b")
+            ),  # Observe that x > -2.0
         ),
     ),
 )
+# We just shifted everything down by -2, can shift back up
 expected_p8 = (gaussian_cdf(0.0, 1.0, 1.0) - gaussian_cdf(0.0, 1.0, 0.0)) / (
     gaussian_cdf(0.0, 1.0, 1.0)
     - gaussian_cdf(0.0, 1.0, 0.0)
