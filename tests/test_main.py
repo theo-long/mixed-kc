@@ -1,3 +1,4 @@
+import pytest
 from kc import (
     Affine,
     Beta,
@@ -15,7 +16,6 @@ from kc import (
     settings,
 )
 from scipy.stats import norm
-
 from kc.real_values import Sum
 
 
@@ -812,69 +812,57 @@ p30 = Let(
 expected_p30 = 0.42356749843592556
 
 
-def main():
-    print("Hello from mixed-kc!")
-    errors = 0
-    count = 0
-    tol = 1e-8
-    for name, program, expected_prob in [
-        ("p1", p1, expected_p1),
-        ("p2", p2, expected_p2),
-        ("p3", p3, expected_p3),
-        ("p4", p4, expected_p4),
-        ("p5", p5, expected_p5),
-        ("p6", p6, expected_p6),
-        ("p7", p7, expected_p7),
-        ("p8", p8, expected_p8),
-        ("p9", p9, expected_p9),
-        ("p10", p10, expected_p10),
-        ("p11", p11, expected_p11),
-        ("p12", p12, expected_p12),
-        ("p13", p13, expected_p13),
-        ("p14", p14, expected_p14),
-        ("p15", p15, expected_p15),
-        ("p16", p16, expected_p16),
-        ("p17", p17, expected_p17),
-        ("p18", p18, expected_p18),
-        ("p19", p19, expected_p19),
-        ("p20", p20, expected_p20),
-        ("p21", p21, expected_p21),
-        ("p22", p22, expected_p22),
-        ("p23", p23, expected_p23),
-        ("p24", p24, expected_p24),
-        ("p25", p25, expected_p25),
-        ("p26", p26, expected_p26),
-        ("p27", p27, expected_p27),
-        ("p28", p28, expected_p28),
-        ("p29", p29, expected_p29),
-        ("p30", p30, expected_p30),
-    ]:
-        count += 1
-        print(f"--- {name} ---")
-        prob, normalizing_constant = run_kc(program)
-        if (
-            prob != expected_prob
-            and abs((prob or -1.0) - (expected_prob or -2.0)) > tol
-        ):
-            print("### ERROR ###")
-            errors += 1
-        print(
-            f"Probability of b: {prob: .3%}"
-            if prob is not None
-            else "Probability of b: None"
+@pytest.mark.parametrize(
+    "name, program, expected_prob, expected_z",
+    [
+        ("p1", p1, expected_p1, None),
+        ("p2", p2, expected_p2, None),
+        ("p3", p3, expected_p3, None),
+        ("p4", p4, expected_p4, None),
+        ("p5", p5, expected_p5, None),
+        ("p6", p6, expected_p6, None),
+        ("p7", p7, expected_p7, expected_Z_p7),
+        ("p8", p8, expected_p8, None),
+        ("p9", p9, expected_p9, None),
+        ("p10", p10, expected_p10, None),
+        ("p11", p11, expected_p11, None),
+        ("p12", p12, expected_p12, None),
+        ("p13", p13, expected_p13, None),
+        ("p14", p14, expected_p14, None),
+        ("p15", p15, expected_p15, None),
+        ("p16", p16, expected_p16, None),
+        ("p17", p17, expected_p17, None),
+        ("p18", p18, expected_p18, None),
+        ("p19", p19, expected_p19, None),
+        ("p20", p20, expected_p20, None),
+        ("p21", p21, expected_p21, None),
+        ("p22", p22, expected_p22, None),
+        ("p23", p23, expected_p23, None),
+        ("p24", p24, expected_p24, None),
+        ("p25", p25, expected_p25, None),
+        ("p26", p26, expected_p26, None),
+        ("p27", p27, expected_p27, None),
+        ("p28", p28, expected_p28, None),
+        ("p29", p29, expected_p29, None),
+        ("p30", p30, expected_p30, None),
+    ],
+)
+def test_kc_programs(name, program, expected_prob, expected_z):
+    print(f"--- {name} ---")
+    prob, normalizing_constant = run_kc(program)
+
+    # Check if probability matches expected
+    if prob is not None and expected_prob is not None:
+        assert abs(prob - expected_prob) <= 1e-8, (
+            f"Probability mismatch for {name}: {prob} != {expected_prob}"
         )
-        print(
-            f"Expected probability of b: {expected_prob: .3%}"
-            if expected_prob is not None
-            else "Expected probability of b: None"
+    elif prob is None and expected_prob is None:
+        pass  # Both None is fine
+    else:
+        assert False, f"Probability mismatch for {name}: {prob} != {expected_prob}"
+
+    # Check normalizing constant if provided
+    if expected_z is not None:
+        assert abs(normalizing_constant - expected_z) <= 1e-8, (
+            f"Normalizing constant mismatch for {name}: {normalizing_constant} != {expected_z}"
         )
-        if name == "p7":
-            print(f"Expected normalizing constant: {expected_Z_p7: .6f}")
-        print(f"Normalizing constant: {normalizing_constant: .6f}")
-        print()
-
-    print(f"{count - errors} / {count} tests passed.")
-
-
-if __name__ == "__main__":
-    main()
