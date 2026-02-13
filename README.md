@@ -223,27 +223,17 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 ## TODO
 - Can we do ObserveReal on the "p" variables?
 - Can we do inference over the "p" variables vs. just marginalizing them out?
-- add ability to have latent Gaussians that can be parameters of other distributions
-- can we pass PExprs with Betas in the leaves to be the priors for p variables?
-    - A PExpr with `dist_type` leaves is a mixture over *truncated* `dist_type` (in this case `dist_type` is beta)
-    - moments of mixture is just weighted sum of component moments
-        - note this assumes independence which we should have in our case? Need to think about if observes change this
-    - therefore we just need to be able to calculate moments for truncated `dist_type`
-        - this is possible for beta dist because $x p_{\alpha, \beta}(x) = p_{\alpha + 1, \beta}(x)$ we have recursive expr for moments
-        - different trick for truncated normal dist
-        - can we express what makes these kinds of recursive moment computations possible for various `dist_type` families? Or just hardcode that we know a formula for certain families?
-        - need a different type of inference at the end since we are not doing inference on boolean vars (as in KC), we are inferring the *moments* so we need a different kind of interpreter something like eval_moment:
-            - first eval the PExpr with continuous leaves into a `Union` with guards + dists
-            - for each guard expression, use KC to evaluate probability that it is true
-                - there should be some optimizations here due to the fact that normalizing const is the same for everything here, many of these guards will have shared subexprs - feels like there should be some natural way to rewrite KC such that it accumulates probabilities in the leaves instead of just eval p(true) for a single bool expr
-            - for each leaf calculate whatever moment we need
-            - then combine moments as weighted sum
-- IfThenElse optimization where if we know cond is actually false/true we can skip a branch
-    - is this handled by laziness somehow?
-- Can we add mutually incompatible *affine* observes?
-    - For d-dimensional gaussian latent, mutually incompatible group is d + 1 observes that are linearly independent
-    - naive/brute force: enumerate all d + 1 subsets and check for lin. indep.
-    - alternative: some kind of data structure that captures lin. indep. relations to efficiently construct
+- Gaussian observe linalg optimizations
+    - Efficiently check 3 cases:
+        1. new lin. indep. observe --> add it
+        2. new lin. dep. observe that is compatible --> continue
+        3. new mutually incompatible observe --> prune this branch
+- Shared Gaussian observes trie data structure
+    - Rather than a list of all universes, have some way to capture gaussian observes being shared between mixture components
+    - Option 1. trie data structure, store observe 'prefix' as we go
+    - Option 2. have some way to represent 'bags' of observes that are shared between branches. Different pairs of branches may overlap in different ways that are not representable in a trie (i.e. one pair shares a, b, other shares b, c, another shares a, c)
+- Add a basic parser
+- Write some representative programs
 
 ## Ideas
 - Adding in continuous latents that are conjugate
