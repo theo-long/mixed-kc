@@ -1,5 +1,4 @@
-from kc import dsl
-from kc import run_kc
+from kc import dsl, run_kc
 
 # Example 1: Noisy measurements with unknown units
 # Measurements could be cm, m, feet, inches.
@@ -56,5 +55,5 @@ if __name__ == "__main__":
     print("Compilation successful.")
 
     # In a real scenario, we would interpret 'ir' to get a density.
-    # result = run_kc(ir)
-    # print("Result BDD:", result)
+    result = run_kc(ir)
+    print("Result BDD:", result)

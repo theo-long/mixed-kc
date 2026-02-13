@@ -68,6 +68,16 @@ This example demonstrates the usage of `choice` for discrete variables and `swit
 See `examples/team_scores.py` for an example of inferring player attributes from match scores, where attributes interact (e.g., doubling strength if a player has a "blue" attribute).
 
 
+### 6. Bernoulli Priors
+You can use `dsl.beta(alpha, beta)` to define a prior over a probability, and pass it to `dsl.flip`.
+
+```python
+# p ~ Beta(2, 2)
+p = dsl.beta(2.0, 2.0, name="p")
+# x ~ Bernoulli(p) 
+x = dsl.flip(p, name="x")
+```
+
 ## files Created
 - `kc/dsl.py`: The core implementation.
 - `tests/test_dsl.py`: Basic tests.

@@ -468,6 +468,23 @@ class Gaussian(Real):
         return real_values.Gaussian(m_val, s_val)
 
 
+class Beta(Real):
+    def __init__(self, alpha, beta, name=None):
+        super().__init__(name)
+        self.alpha = ensure_real(alpha)
+        self.beta = ensure_real(beta)
+        self._deps = [self.alpha, self.beta]
+
+    def to_ir(self, get_ref):
+        a_val = self.alpha.value if isinstance(self.alpha, Literal) else None
+        b_val = self.beta.value if isinstance(self.beta, Literal) else None
+
+        if a_val is None or b_val is None:
+            raise ValueError("Beta parameters must be constants in current IR")
+
+        return real_values.Beta(a_val, b_val)
+
+
 class Flip(Bool):
     def __init__(self, prob, name=None):
         super().__init__(name)
@@ -675,6 +692,18 @@ def gaussian(mean, std, name=None) -> Real:
         get_current_model().names[name] = res
 
     return res
+
+
+def beta(alpha, beta, name=None) -> Real:
+    a = ensure_real(alpha)
+    b = ensure_real(beta)
+    if isinstance(a, Literal) and isinstance(b, Literal):
+        return Model.register(get_current_model(), Beta(a, b, name), name)
+    # Symbolic Beta parameters?
+    # IR Beta class takes float alpha/beta.
+    # So we probably can't support symbolic alpha/beta yet unless we reparameterize or IR supports it.
+    # For now, require constants or error at compile time (handled by Beta.to_ir).
+    return Model.register(get_current_model(), Beta(a, b, name), name)
 
 
 def flip(prob, name=None) -> Bool:
