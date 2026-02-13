@@ -723,20 +723,165 @@ def if_else(
     return get_current_model().register(node)
 
 
-def match_enum(val: Enum, cases: dict[Enum, Any]) -> Expression:
-    # Cascading if-else
-    # val must be something we can check equality against?
-    # DSL doesn't really have "Enum nodes" yet.
-    # If `val` is a Python Enum (constant) -> simply pick the result.
-    # If `val` is a DSL variable derived from a Flip?
-    # Current IR Flip is boolean. No categorical yet.
-    # User can simulate categorical with tree of flips.
+@dataclass(eq=False)
+class CategoricalReal(Real):
+    options: list[Expression]
+    probs: list[float]
 
-    # If `val` is not a DSL node, evaluating it is static.
-    # "Example 1: unit = uniform(Unit)" -> this implies DSL support for Enum logic.
-    # But we don't have Categorical IR yet.
-    # User logic meant: `unit` is a random variable.
+    def __init__(self, options: list[Expression], probs: list[float], name=None):
+        super().__init__(name)
+        self.options = options
+        self.probs = probs
+        self._deps = list(options)
 
-    # For MVP, assume `val` is a standard python value? No, that defeats the purpose.
-    # If `val` is a concrete Enum, we just return cases[val].
-    return cases[val]
+    def to_ir(self, get_ref):
+        ir_options = [get_ref(opt) for opt in self.options]
+        return terms.Categorical(ir_options, self.probs)
+
+
+@dataclass(eq=False)
+class CategoricalBool(Bool):
+    options: list[Expression]
+    probs: list[float]
+
+    def __init__(self, options: list[Expression], probs: list[float], name=None):
+        super().__init__(name)
+        self.options = options
+        self.probs = probs
+        self._deps = list(options)
+
+    def to_ir(self, get_ref):
+        ir_options = [get_ref(opt) for opt in self.options]
+        return terms.Categorical(ir_options, self.probs)
+
+
+def choice(
+    options: list[Any], probs: Optional[list[float]] = None, name: Optional[str] = None
+) -> Expression:
+    if not options:
+        raise ValueError("Choice options cannot be empty")
+
+    n = len(options)
+    if probs is None:
+        probs = [1.0 / n] * n
+
+    if len(probs) != n:
+        raise ValueError(f"Length of probs ({len(probs)}) must match options ({n})")
+
+    # Convert options to Expressions
+    expr_options = []
+    is_all_real = True
+    is_all_bool = True
+
+    for opt in options:
+        if isinstance(opt, (int, float)) and not isinstance(opt, bool):
+            expr = ensure_real(opt)
+            is_all_bool = False
+        elif isinstance(opt, bool):
+            expr = ensure_bool(opt)
+            is_all_real = False
+        elif isinstance(opt, Real):
+            expr = opt
+            is_all_bool = False
+        elif isinstance(opt, Bool):
+            expr = opt
+            is_all_real = False
+        else:
+            # Fallback: try ensure_real if it looks like a number
+            try:
+                expr = ensure_real(opt)
+                is_all_bool = False
+            except:
+                # What if it's a generic Expression?
+                if isinstance(opt, Expression):
+                    expr = opt
+                    is_all_real = False
+                    is_all_bool = False
+                else:
+                    raise ValueError(f"Unsupported option type: {type(opt)}")
+        expr_options.append(expr)
+
+    if is_all_real:
+        node = CategoricalReal(expr_options, probs, name)
+    elif is_all_bool:
+        node = CategoricalBool(expr_options, probs, name)
+    else:
+        # Mixed types? Default to Real if possible?
+        # IR Categorical can handle mixed types technically (as PExprs),
+        # but DSL typing enforces separation.
+        # If we have mixed Real/Bool, we might need a generic CategoricalExpression?
+        # For now, let's coerce to Real if possible (booleans become 0.0/1.0 via ensure_real? No ensure_real wraps Literal)
+        # Let's enforce homogeneity for now or raise.
+        raise ValueError("Mixed types in choice options not fully supported yet.")
+
+    return get_current_model().register(node, name)
+
+
+def switch(value: Expression, cases: dict[Any, Any], default: Any = None) -> Expression:
+    """
+    Desugars to nested if_else checking equality.
+    `value` must support `__eq__`.
+    """
+    # Iterate through cases
+    # We can't efficiently switch on a symbolic value without linear scan
+    # unless we have a specific Switch node in IR.
+    # Current IR doesn't seem to have Switch.
+
+    # We need to ensure we cover all cases or use default.
+    # If default is None, we assume the cases cover the domain
+    # (or we return the last case if nothing matches? No, that's unsafe).
+
+    items = list(cases.items())
+    if not items:
+        if default is not None:
+            # Just return default value
+            if isinstance(default, (int, float, bool)):
+                return (
+                    ensure_real(default)
+                    if not isinstance(default, bool)
+                    else ensure_bool(default)
+                )
+            return default
+        raise ValueError("Switch must have cases or default")
+
+    def build_chain(index):
+        if index >= len(items):
+            if default is not None:
+                return default
+            # If no default, and we exhausted cases, what to return?
+            # Implicitly, the value MUST match one case.
+            # But we need an expression for the "else" branch of the last if.
+            # We can raise an error in generation?
+            # Or we can reuse the last case?
+            # Safer to require default if not exhaustive.
+            # But let's assume the last case is the fallback if no default provided?
+            # No, standard switch doesn't work that way.
+            raise ValueError("Switch is not exhaustive and no default provided.")
+
+        k, v = items[index]
+        # Recursively build
+        # if value == k: return v else: build_chain(index+1)
+
+        # Check if k is a raw value or expression
+        # value == k works via operator overloading
+        cond = value == k
+
+        # If this is the last item and no default, we can optimize:
+        # If we assume exhaustiveness, we just return 'v'.
+        # But we can't guarantee 'value' matches 'k'.
+        # If user knows it's exhaustive, they usually make default the last case.
+
+        if index == len(items) - 1 and default is None:
+            # Treat last case as default?
+            # "switch(x, {0: a, 1: b})" -> if x==0 then a else b ?
+            # Only if x is guaranteed to be 0 or 1.
+            # If x is 2, this returns b.
+            # This is a common pattern for exhaustive matches on binary/enum.
+            return v
+
+        true_val = v
+        false_val = build_chain(index + 1)
+
+        return if_else(cond, true_val, false_val)
+
+    return build_chain(0)

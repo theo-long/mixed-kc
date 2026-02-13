@@ -62,6 +62,7 @@ with dsl.Model() as m:
 
 ### 4. Measurements with Unknown Units
 See `examples/measurements.py` for a full example of inferring a quantity when the unit of measurement (cm, m, feet, inches) is unknown and inferred from the data.
+This example demonstrates the usage of `choice` for discrete variables and `switch` for conditional logic based on discrete values.
 
 ### 5. Team Combinatorics
 See `examples/team_scores.py` for an example of inferring player attributes from match scores, where attributes interact (e.g., doubling strength if a player has a "blue" attribute).

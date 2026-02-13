@@ -13,38 +13,28 @@ def infer_height(measurements):
         true_height_m = dsl.gaussian(1.7, 0.3, name="true_height_m")
 
         # Prior on unit used.
-        # We need a categorical choice over 4 options.
-        # We simulate this with 2 flips (bits).
-        # 00 = CM, 01 = M, 10 = FEET, 11 = INCHES
-
-        u1 = dsl.flip(0.5, name="u1")
-        u2 = dsl.flip(0.5, name="u2")
+        # We need a categorical choice over 4 options:
+        # 0=CM, 1=M, 2=FEET, 3=INCHES
+        u_idx = dsl.choice([0, 1, 2, 3], name="unit_idx")
 
         # Logic to determine scale factor to meters
-        # if u1 check u2...
+        # Switch on u_idx
+        scale_to_m = dsl.switch(
+            u_idx,
+            {
+                0: 0.01,  # CM
+                1: 1.0,  # M
+                2: 0.3048,  # FT
+                3: 0.0254,  # IN
+            },
+        )
 
-        # Scale factors:
-        # CM -> M: 0.01 (u1=F, u2=F)
-        # M -> M: 1.0   (u1=F, u2=T)
-        # FT -> M: 0.3048 (u1=T, u2=F)
-        # IN -> M: 0.0254 (u1=T, u2=T)
-
-        scale_if_u1_false = dsl.if_else(u2, 1.0, 0.01)
-        scale_if_u1_true = dsl.if_else(u2, 0.0254, 0.3048)
-
-        scale_to_m = dsl.if_else(u1, scale_if_u1_true, scale_if_u1_false)
-
-        # Measurement noise (e.g. 1cm error, converted to meters roughly?
-        # actually noise depends on unit usually? let's assume noise is relative or fixed in measurement space)
-        # "noise of measurements" usually implies "I measured X, with error E in that unit".
-        # So observed = (true_height / scale) + noise
-        # => observed * scale = true_height + noise * scale ?
-        # Let's simple model: observed value is Normal(true_height / scale, noise_in_measure_units)
-
-        noise = 0.1  # e.g. 0.1 of a unit error
+        # Measurement noise (e.g. 0.1 of a unit)
+        noise = 0.1
 
         for i, val in enumerate(measurements):
             # We predict the measurement in the *unknown unit*
+            # predicted = true_height / scale
             predicted_val_in_unit = true_height_m / scale_to_m
 
             # Observe that the actual measurement 'val' is close to predicted
@@ -66,6 +56,5 @@ if __name__ == "__main__":
     print("Compilation successful.")
 
     # In a real scenario, we would interpret 'ir' to get a density.
-    # For now, we print the IR structure or run it if possible.
     # result = run_kc(ir)
     # print("Result BDD:", result)
