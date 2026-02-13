@@ -8,8 +8,12 @@ def is_notebook() -> bool:
     return "ipykernel" in sys.modules
 
 
-# Set _cli_parse_args to None if in a notebook, otherwise use default behavior (parse sys.argv)
-cli_args_value = None if is_notebook() else True
+def is_pytest() -> bool:
+    return "pytest" in sys.modules
+
+
+# Set _cli_parse_args to None if in a notebook or pytest, otherwise use default behavior (parse sys.argv)
+cli_args_value = None if is_notebook() or is_pytest() else True
 
 
 class Config(BaseSettings):
