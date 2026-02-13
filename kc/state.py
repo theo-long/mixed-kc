@@ -71,7 +71,7 @@ class KCState(RandomVariableCounter):
 
     def get_gaussian_union_symbolic_observe_expression(
         self,
-        symbolic_value: Union[GaussianVariable | GaussianSum],
+        symbolic_value: Union[GaussianSum],
         val: float,
     ) -> _bdd._Ref:
         union_clause = self.bdd.false
@@ -103,13 +103,10 @@ class KCState(RandomVariableCounter):
 
     def get_gaussian_sum_symbolic_observe_expression(
         self,
-        symbolic_value: GaussianVariable | GaussianSum,
+        symbolic_value: GaussianSum,
         val: float,
     ) -> _bdd._Ref:
-        if isinstance(symbolic_value, GaussianVariable):
-            rvs = {symbolic_value}
-        else:
-            rvs = symbolic_value.rvs
+        rvs = symbolic_value.rvs
 
         # Move all shift terms into the value
         new_vars: list[GaussianVariable] = []

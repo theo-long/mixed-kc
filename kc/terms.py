@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
+from numpy import isin
+
 from kc.base import AExpr, PExpr
 from kc.real_values import (
     GaussianSum,
@@ -187,6 +189,9 @@ class Observe(PExpr):
 
 
 def nonsymbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"):
+    if isinstance(symbolic_value, GaussianSum):
+        assert len(symbolic_value.rvs) == 1, "No Gaussian sums in nonsymbolic mode"
+        symbolic_value = next(iter(symbolic_value.rvs))  # type: ignore
     if isinstance(symbolic_value, GaussianVariable):
         clause, _ = state.get_gaussian_variable_equality_expression(
             symbolic_value.var, symbolic_value.scale, symbolic_value.shift, val
@@ -200,7 +205,7 @@ def nonsymbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"
 
 
 def symbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"):
-    if isinstance(symbolic_value, (GaussianVariable, GaussianSum)):
+    if isinstance(symbolic_value, GaussianSum):
         clause = state.get_gaussian_sum_symbolic_observe_expression(symbolic_value, val)
     elif isinstance(symbolic_value, Union):
         clause = state.get_gaussian_union_symbolic_observe_expression(

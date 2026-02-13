@@ -71,13 +71,17 @@ class Gaussian(AExpr, DistributionWithDensity):
         var = state.next_variable(self)
         # TODO - should we have this return a GaussianSum with a single variable?
         # that way we don't need to handle wrapping/unwrapping GaussianVariables elsewhere
-        return GaussianVariable(var, scale=self.std, shift=self.mean)
+        return GaussianSum(
+            frozenset([GaussianVariable(var, scale=self.std, shift=self.mean)])
+        )
 
     def collect_real_truncation(
         self, env: dict[str, PExpr], state: "TruncationState"
     ) -> Any:
         var = state.next_variable(self)
-        return GaussianVariable(var, scale=self.std, shift=self.mean)
+        return GaussianSum(
+            frozenset([GaussianVariable(var, scale=self.std, shift=self.mean)])
+        )
 
     def pdf(self, val):
         return norm.pdf(val, loc=0, scale=1).item()
@@ -285,10 +289,9 @@ class Sum(PExpr):
         for (lhs_formula, lhs_value), (rhs_formula, rhs_value) in itertools.product(
             zip(left.formulae, left.values), zip(right.formulae, right.values)
         ):
-            if not isinstance(lhs_value, GaussianSum):
-                lhs_value = GaussianSum(frozenset([lhs_value]))
-            if not isinstance(rhs_value, GaussianSum):
-                rhs_value = GaussianSum(frozenset([rhs_value]))
+            assert isinstance(lhs_value, GaussianSum) and isinstance(
+                rhs_value, GaussianSum
+            ), "Elements of Union must GaussianSum"
             sum_value = lhs_value + rhs_value
             sum_to_formula[sum_value].append(lhs_formula & rhs_formula)
 
@@ -326,10 +329,9 @@ class Sum(PExpr):
         # For truncation we don't need to track formulae, just the sums
         sums = set()
         for lhs_value, rhs_value in itertools.product(left.values, right.values):
-            if not isinstance(lhs_value, GaussianSum):
-                lhs_value = GaussianSum(frozenset([lhs_value]))
-            if not isinstance(rhs_value, GaussianSum):
-                rhs_value = GaussianSum(frozenset([rhs_value]))
+            assert isinstance(lhs_value, GaussianSum) and isinstance(
+                rhs_value, GaussianSum
+            ), "Elements of Union must GaussianSum"
             sum_value = lhs_value + rhs_value
             sums.add(sum_value)
 
@@ -392,9 +394,7 @@ def merge_real_values(cond, t, f):
     If t or f is a GaussianSum, we 'invert' the Union to create a Union of Sums if this setting is enabled.
     """
     # If neither t nor f is a GaussianSum, we can use the simpler 'reduced' merging logic
-    if settings.union_of_sums or not (
-        isinstance(t, GaussianSum) or isinstance(f, GaussianSum)
-    ):
+    if settings.union_of_sums:
         return merge_real_values_reduced(cond, t, f)
 
     if isinstance(t, GaussianSum):
