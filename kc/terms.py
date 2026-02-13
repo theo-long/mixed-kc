@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
-from numpy import isin
-
 from kc.base import AExpr, PExpr
 from kc.real_values import (
     GaussianSum,
