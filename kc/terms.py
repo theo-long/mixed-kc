@@ -235,8 +235,9 @@ class ObserveReal(PExpr):
             state.obs_counter.add_observation(symbolic_value)
         elif isinstance(symbolic_value, Union):
             for val in symbolic_value.values:
-                state.interaction_counter.add_observation(val)
-                state.obs_counter.add_observation(val)
+                if isinstance(val, GaussianSum):
+                    state.interaction_counter.add_observation(val)
+                    state.obs_counter.add_observation(val)
         else:
             raise ValueError(f"Unexpected type: {type(symbolic_value)}")
         return
