@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from typing import Any, Self, TypeVar
 
 import sympy
 from scipy.stats import beta, norm
@@ -47,9 +47,7 @@ class Beta(AExpr, DistributionWithMoments, DistributionWithDensity):
     def pdf(self, val):
         return beta.pdf(val, a=self.alpha, b=self.beta).item()
 
-    def preprocess(
-        self, env: dict[str, PExpr], state
-    ) -> Any:
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
         return
 
     def kc(self, env, state):
@@ -72,9 +70,7 @@ class Gaussian(AExpr, DistributionWithDensity):
             frozenset([GaussianVariable(var, scale=self.std, shift=self.mean)])
         )
 
-    def preprocess(
-        self, env: dict[str, PExpr], state
-    ) -> Any:
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
         var = state.rv_counter.next_variable(self)
         return GaussianSum(
             frozenset([GaussianVariable(var, scale=self.std, shift=self.mean)])
@@ -97,9 +93,7 @@ class TruncatableGaussian(AExpr, DistributionWithDensity):
         state.add_bdd_nodes_for_gaussian_variable(var, scale=self.std, shift=self.mean)
         return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
 
-    def preprocess(
-        self, env: dict[str, PExpr], state
-    ) -> Any:
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
         var = state.rv_counter.next_variable(self)
         return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
 
@@ -354,9 +348,7 @@ class Affine(PExpr):
         else:
             raise TypeError("body should evaluate to a Gaussian Variable or Union")
 
-    def preprocess(
-        self, env: dict[str, PExpr], state
-    ) -> Any:
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
         body = self.body.preprocess(env, state)
         if isinstance(body, AffineTransformable):
             return body.apply_affine(self.scale, self.shift)
