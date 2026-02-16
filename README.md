@@ -235,6 +235,10 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 - Add a basic parser
 - Write some representative programs
 
+## Trie data structure thoughts
+- One issue with Trie structure is you want to do a compatibility/redundancy check for each new obs vector you add. One way to do this is with QR decomposition, but in a Trie you don't have a single matrix - you have rows stored at each level.
+- Maybe something much more sparse, where you just have a packed array of all observation vectors, and different paths are just indexed by a trie (or just operate on paths in parallel).
+
 ## Ideas
 - Adding in continuous latents that are conjugate
 - Can we allow for inequalties between two different Gaussian variables e.g. g1 <= g2? Or are we only able to do g1 <= val?
