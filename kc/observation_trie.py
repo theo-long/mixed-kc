@@ -62,7 +62,7 @@ class IncrementalSystem:
             # qr_insert(Q, R, u, k, which='col')
 
             # Note: qr_insert handles the Gram-Schmidt / Householder logic internally
-            self.Q, self.R = scipy.linalg.qr_insert(
+            self.Q, self.R = scipy.linalg.qr_insert(  # type:ignore
                 self.Q, self.R, v, self.Q.shape[1], which="col"
             )
 
@@ -131,8 +131,12 @@ class ObservationNode:
         self, other: LikelihoodType | PosteriorUpdateType
     ) -> "ObservationNode | None":
         if isinstance(other, LikelihoodType):
-            for i in range(len(self.children)):
-                self.children[i] *= other
+            new_children = []
+            for child in self.children:
+                child *= other
+                if child:
+                    new_children.append(child)
+            self.children = new_children
             return self
 
         result = self.observations.process_equation(other[1:], other[0])
