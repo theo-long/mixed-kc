@@ -7,6 +7,7 @@ from functools import reduce
 import dd.autoref as _bdd
 import numpy as np
 import sympy
+from scipy.cluster.hierarchy import DisjointSet
 
 from kc.config import settings
 from kc.real_values import (
@@ -61,8 +62,17 @@ class LatentInteractionCounter:
     """Union-Find data structure which identifies disjoint subsets of interacting continuous latent variables."""
 
     def __init__(self):
-        # TODO
-        pass
+        self.disjoint_sets = DisjointSet()
+
+    def add_observation(self, symbolic_value: GaussianSum):
+        prev: int | None = None
+        for rv in symbolic_value.rvs:
+            if isinstance(rv, Zero):
+                continue
+            self.disjoint_sets.add(rv.var)
+            if prev:
+                self.disjoint_sets.merge(rv.var, prev)
+                prev = rv.var
 
 
 # Used to determine the trie prefix ordering
@@ -71,6 +81,9 @@ class ObservationFrequencyCounter:
 
     def __init__(self):
         # TODO
+        pass
+
+    def add_observation(self, symbolic_value: GaussianSum):
         pass
 
 
