@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from kc.state import KCState, TruncationState
+    from kc.state import KCState, PreprocessState
 
 
 class PExpr(ABC):
@@ -12,10 +12,10 @@ class PExpr(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def collect_real_truncation(
-        self, env: dict[str, "PExpr"], state: "TruncationState"
+    def preprocess(
+        self, env: dict[str, "PExpr"], state: "PreprocessState"
     ) -> Any:
-        """Collect all the observed inequalities and the Gaussian variables they apply to."""
+        """Perform various preprocessing steps before KC."""
         raise NotImplementedError()
 
     def __add__(self, other: "PExpr") -> "PExpr":

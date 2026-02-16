@@ -44,7 +44,7 @@ class RandomVariableCounter:
         return count
 
 
-class TruncationState(RandomVariableCounter):
+class TruncationCounter:
     def __init__(self):
         self.truncations: dict[int, set[float]] = defaultdict(set)
         super().__init__()
@@ -56,17 +56,43 @@ class TruncationState(RandomVariableCounter):
         return self.truncations.get(var, set())
 
 
+# Used so that we can treat disjoint subsets independently in inference
+class LatentInteractionCounter:
+    """Union-Find data structure which identifies disjoint subsets of interacting continuous latent variables."""
+
+    def __init__(self):
+        # TODO
+        pass
+
+
+# Used to determine the trie prefix ordering
+class ObservationFrequencyCounter:
+    """Count the number of sample paths along which a particular Gaussian observation occurs."""
+
+    def __init__(self):
+        # TODO
+        pass
+
+
+class PreprocessState:
+    def __init__(self) -> None:
+        self.truncation_counter = TruncationCounter()
+        self.rv_counter = RandomVariableCounter()
+        self.obs_counter = ObservationFrequencyCounter()
+        self.interaction_counter = LatentInteractionCounter()
+
+
 class KCState(RandomVariableCounter):
-    def __init__(self, truncation_state: TruncationState):
+    def __init__(self, preprocess_state: PreprocessState):
         self.bdd = _bdd.BDD()
         self.flips = 0
         self.flip_params = 0
         self.weights: dict[int, tuple[WeightType, WeightType]] = {}
         self.priors: dict[sympy.Symbol, DistributionWithMoments] = {}
         self._observes_all_hold = self.bdd.true
-        self.truncations = truncation_state.truncations
+        self.truncations = preprocess_state.truncation_counter.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
-        self.gaussian_count = truncation_state.variable_count(Gaussian)
+        self.gaussian_count = preprocess_state.rv_counter.variable_count(Gaussian)
         super().__init__()
 
     def get_gaussian_union_symbolic_observe_expression(

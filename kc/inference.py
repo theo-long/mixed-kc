@@ -6,7 +6,7 @@ from kc.base import PExpr
 from kc.config import settings
 from kc.model_count import model_count
 from kc.real_values import GaussianSum, GaussianVariable, Zero
-from kc.state import KCState, TruncationState
+from kc.state import KCState, PreprocessState
 from kc.types import epsilon, get_float_value
 
 
@@ -73,9 +73,9 @@ def log_score_singular(mu, cov, A, b, tol=1e-12):
 
 
 def run_kc(expr: PExpr):
-    trunc_state = TruncationState()
-    expr.collect_real_truncation({}, trunc_state)
-    state = KCState(trunc_state)
+    preprocess_state = PreprocessState()
+    expr.preprocess({}, preprocess_state)
+    state = KCState(preprocess_state)
     val = expr.kc({}, state)
     if settings.debug:
         print(f"BDD vars: {state.bdd.vars}")
