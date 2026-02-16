@@ -1,27 +1,18 @@
+from copy import deepcopy
 from dataclasses import dataclass, field
+from enum import Enum
 
 import numpy as np
 import scipy.linalg
 from numpy.typing import NDArray
 
-from kc.types import LikelihoodType
+from kc.types import LikelihoodType, PosteriorUpdateType
 
 
-@dataclass
-class LikelihoodNode:
-    likelihood: LikelihoodType
-
-
-@dataclass
-class ObservationNode:
-    """We maintain a QR decomposition of our observation matrix V = (A, b) which represents Ax = b"""
-
-    Q: NDArray
-    R: NDArray
-    children: set["ObservationNode | LikelihoodNode"] = field(default_factory=set)
-
-    def add_obs(self, observation_vector: NDArray):
-        raise NotImplementedError()
+class UpdateResult(Enum):
+    REDUNDANT = 0
+    UPDATE = 1
+    INCOMPATIBLE = -1
 
 
 class IncrementalSystem:
@@ -47,20 +38,22 @@ class IncrementalSystem:
             z = np.array([])
             norm_res = np.linalg.norm(v)
 
-        # --- STEP 2: Branch Logic ---
-
         # CASE A: Dependent (Redundant or Incompatible)
         if norm_res < self.tol:
             if self.R.shape[0] == 0:
-                return "Incompatible" if abs(c) > self.tol else "Redundant"
+                return (
+                    UpdateResult.INCOMPATIBLE
+                    if abs(c) > self.tol
+                    else UpdateResult.REDUNDANT
+                )
 
             # Solve R * w = z to get weights
             w = scipy.linalg.solve_triangular(self.R, z, lower=False)
             c_predicted = w @ self.b
 
             if abs(c - c_predicted) > self.tol:
-                return f"Incompatible (Contradiction: {c_predicted:.2f} != {c})"
-            return "Redundant"
+                return UpdateResult.INCOMPATIBLE
+            return UpdateResult.REDUNDANT
 
         # CASE B: Independent -> Use Scipy to Update
         else:
@@ -74,4 +67,92 @@ class IncrementalSystem:
             )
 
             self.b = np.append(self.b, c)
-            return "Accepted (New Independent Row)"
+            return UpdateResult.UPDATE
+
+    def merge(self, other: "IncrementalSystem"):
+        final_result = UpdateResult.REDUNDANT
+        A = (other.Q @ other.R).T
+        for v, c in zip(A, other.b):
+            result = self.process_equation(v, c)
+            if result == UpdateResult.INCOMPATIBLE:
+                return result
+            if result == UpdateResult.UPDATE:
+                final_result = result
+        return final_result
+
+
+@dataclass
+class LikelihoodNode:
+    likelihood: LikelihoodType
+
+    def __mul__(self, other: LikelihoodType):
+        self.likelihood *= other  # type: ignore
+        return self
+
+
+@dataclass
+class ObservationNode:
+    """We maintain a QR decomposition of our observation matrix V = (A, b) which represents Ax = b"""
+
+    observations: IncrementalSystem
+    children: list["ObservationNode | LikelihoodNode"] = field(default_factory=list)
+
+    def add_obs(self, observation_vector: NDArray):
+        raise NotImplementedError()
+
+    def __add__(self, other: "ObservationNode") -> "ObservationNode":
+        if not isinstance(other, ObservationNode):
+            raise TypeError
+
+        return ObservationNode(
+            IncrementalSystem(self.observations.n), children=[self, other]
+        )
+
+    def _collect_qr_update_recursive(self, qr: IncrementalSystem):
+        """Recursively check if some sequence of observations is still valid."""
+        result = qr.merge(self.observations)
+        if result == UpdateResult.INCOMPATIBLE:
+            return None
+
+        new_children = []
+        for i in range(len(self.children)):
+            child = self.children[i]
+            if isinstance(child, ObservationNode):
+                child = child._collect_qr_update_recursive(deepcopy(qr))
+            if child:
+                new_children.append(child)
+
+        self.children = new_children
+        if self.children:
+            return self
+        return None
+
+    def __mul__(
+        self, other: LikelihoodType | PosteriorUpdateType
+    ) -> "ObservationNode | None":
+        if isinstance(other, LikelihoodType):
+            for i in range(len(self.children)):
+                self.children[i] *= other
+            return self
+
+        result = self.observations.process_equation(other[1:], other[0])
+        if result == UpdateResult.INCOMPATIBLE:
+            return None
+
+        new_children = []
+        for i in range(len(self.children)):
+            child = self.children[i]
+            if isinstance(child, ObservationNode):
+                child = child._collect_qr_update_recursive(deepcopy(self.observations))
+            if child:
+                new_children.append(child)
+
+        self.children = new_children
+        if self.children:
+            return self
+        return None
+
+    def __rmul__(
+        self, other: LikelihoodType | PosteriorUpdateType
+    ) -> "ObservationNode | None":
+        return self.__mul__(other)
