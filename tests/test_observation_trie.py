@@ -102,6 +102,7 @@ def test_observation_node_update():
 
     updated_leaf = leaf * obs
     assert updated_leaf is not None
+    assert isinstance(updated_leaf, ObservationNode)
     assert (
         updated_leaf.observations.process_equation([1, 0], 5) == UpdateResult.REDUNDANT
     )
@@ -133,8 +134,9 @@ def test_observation_node_pruning():
 
     updated_root = root * obs
     assert updated_root is not None
+    assert isinstance(updated_root, ObservationNode)
     assert len(updated_root.children) == 1
-    assert updated_root.children[0] is branch1
+    assert updated_root.children[0] is branch1.children[0]
 
 
 def test_observation_node_likelihood_update():
@@ -150,6 +152,7 @@ def test_observation_node_likelihood_update():
     updated_leaf = leaf * 0.5
     assert updated_leaf is not None
     # Check that children updated
+    assert isinstance(updated_leaf, ObservationNode)
     assert len(updated_leaf.children) == 1
     assert isinstance(updated_leaf.children[0], LikelihoodNode)
     assert updated_leaf.children[0].likelihood == 0.5

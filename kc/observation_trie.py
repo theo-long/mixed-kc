@@ -123,13 +123,20 @@ class ObservationNode:
                 new_children.append(child)
 
         self.children = new_children
+        # If there is a single observation node child, collapse them together
+        if len(self.children) == 1 and not isinstance(self.children[0], LikelihoodNode):
+            merged_node = self.children[0]
+            merged_node.observations.merge(self.observations)
+            return merged_node
+
         if self.children:
             return self
+
         return None
 
     def __mul__(
         self, other: LikelihoodType | PosteriorUpdateType
-    ) -> "ObservationNode | None":
+    ) -> "ObservationNode | LikelihoodNode | None":
         if isinstance(other, LikelihoodType):
             new_children = []
             for child in self.children:
@@ -152,11 +159,17 @@ class ObservationNode:
                 new_children.append(child)
 
         self.children = new_children
+        # If there is a single observation node child, collapse them together
+        if len(self.children) == 1 and not isinstance(self.children[0], LikelihoodNode):
+            merged_node = self.children[0]
+            merged_node.observations.merge(self.observations)
+            return merged_node
+
         if self.children:
             return self
         return None
 
     def __rmul__(
         self, other: LikelihoodType | PosteriorUpdateType
-    ) -> "ObservationNode | None":
+    ) -> "ObservationNode | LikelihoodNode | None":
         return self.__mul__(other)
