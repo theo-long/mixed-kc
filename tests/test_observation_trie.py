@@ -1,10 +1,11 @@
 import numpy as np
 import pytest
+
 from kc.observation_trie import (
     IncrementalSystem,
+    LikelihoodNode,
     ObservationNode,
     UpdateResult,
-    LikelihoodNode,
 )
 
 
