@@ -2,7 +2,7 @@ from typing import Mapping
 
 import dd.autoref as _bdd
 
-from kc.observation_trie import IncrementalSystem, LikelihoodNode, ObservationNode
+from kc.observation_trie import LikelihoodNode, ObservationNode
 from kc.types import WeightType
 
 
