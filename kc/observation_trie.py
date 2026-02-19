@@ -112,7 +112,9 @@ class LikelihoodNode:
         elif self.likelihood == 0:
             return other
         else:
-            return ObservationNode(self.observations, children=[self, other])
+            return ObservationNode(
+                IncrementalSystem(other.observations.n), children=[self, other]
+            )
 
     def _recursive_compute_posterior(
         self, posterior_mixture: list[tuple[float, NDArray, NDArray]]
