@@ -60,7 +60,7 @@ class IncrementalSystem:
         # CASE B: Independent -> Use Scipy to Update
         # B1: Empty QR
         elif self.Q.shape[1] == 0:
-            self.Q, self.R = scipy.linalg.qr(v.reshape(-1, 1))
+            self.Q, self.R = scipy.linalg.qr(v.reshape(-1, 1), mode="economic")
             self.b = np.array([c])
             return UpdateResult.UPDATE
         # B2: merge into existing QR
