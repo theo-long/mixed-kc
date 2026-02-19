@@ -35,6 +35,8 @@ def get_gaussian_posterior(
             sol_b = np.linalg.lstsq(R.T, b, rcond=None)[0]
 
         qt_mu = Q.T @ mu
+        if sol_b.ndim != qt_mu.ndim:
+            sol_b = sol_b.reshape(qt_mu.shape)
         innovation = sol_b - qt_mu
 
         # 2. Compute Omega = Q.T @ cov @ Q
@@ -82,7 +84,9 @@ def get_gaussian_posterior(
 
     # 3. Update the Mean (mu_new)
     # mu_new = mu + K @ (b - A @ mu)
-    mu_new = mu + K @ (b - A @ mu)
+    A_mu = A @ mu
+    b_reshaped = b.reshape(A_mu.shape) if b.ndim != A_mu.ndim else b
+    mu_new = mu + K @ (b_reshaped - A_mu)
 
     # 4. Update the Covariance (cov_new)
     # cov_new = (I - K @ A) @ cov
@@ -126,6 +130,8 @@ def log_score_singular(mu, cov, A=None, b=None, Q=None, R=None, tol=1e-12):
                 return -float("inf")
 
         qt_mu = Q.T @ mu
+        if sol_b.ndim != qt_mu.ndim:
+            sol_b = sol_b.reshape(qt_mu.shape)
         v = sol_b - qt_mu
 
         # 2. Compute Omega = Q.T @ cov @ Q
@@ -177,7 +183,8 @@ def log_score_singular(mu, cov, A=None, b=None, Q=None, R=None, tol=1e-12):
     # Calculate innovation mean and covariance
     y_mean = A @ mu
     S = A @ cov @ A.T
-    residual = b - y_mean
+    b_reshaped = b.reshape(y_mean.shape) if b.ndim != y_mean.ndim else b
+    residual = b_reshaped - y_mean
 
     # Use SVD for rank, pseudo-determinant, and pseudo-inverse
     # S = U @ diag(eigenvals) @ Vh

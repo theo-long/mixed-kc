@@ -235,9 +235,11 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 - Add a basic parser
 - Write some representative programs
 
-## Trie data structure thoughts
+## Gaussian obs data structure thoughts
 - One issue with Trie structure is you want to do a compatibility/redundancy check for each new obs vector you add. One way to do this is with QR decomposition, but in a Trie you don't have a single matrix - you have rows stored at each level.
 - Maybe something much more sparse, where you just have a packed array of all observation vectors, and different paths are just indexed by a trie (or just operate on paths in parallel).
+- Try and come up with some 'minimal set basis' instead of a trie-like structure.
+- Rather than having likelihood nodes all the way at the leaves, maybe we can push them up as much as possible in order to avoid having to do an O(n) pass to update all the likelihoods.
 
 ## Ideas
 - Adding in continuous latents that are conjugate

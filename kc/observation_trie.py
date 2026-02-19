@@ -96,7 +96,7 @@ class LikelihoodNode:
         new_posterior_mixture = []
         for i in range(len(posterior_mixture)):
             likelihood, mu, cov = posterior_mixture[i]
-            new_posterior_mixture.append((likelihood * self.likelihood, mu, cov)) # type: ignore
+            new_posterior_mixture.append((likelihood * self.likelihood, mu, cov))  # type: ignore
 
         return new_posterior_mixture
 
@@ -145,9 +145,7 @@ class ObservationNode:
 
         return None
 
-    def __mul__(
-        self, other: WeightType
-    ) -> "ObservationNode | LikelihoodNode | None":
+    def __mul__(self, other: WeightType) -> "ObservationNode | LikelihoodNode | None":
         if isinstance(other, LikelihoodType):
             new_children = []
             for child in self.children:
@@ -180,9 +178,7 @@ class ObservationNode:
             return self
         return None
 
-    def __rmul__(
-        self, other: WeightType
-    ) -> "ObservationNode | LikelihoodNode | None":
+    def __rmul__(self, other: WeightType) -> "ObservationNode | LikelihoodNode | None":
         return self.__mul__(other)
 
     def _recursive_compute_posterior(

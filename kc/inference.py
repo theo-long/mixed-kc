@@ -32,6 +32,9 @@ def run_kc(expr: PExpr):
     normalizing_constant = get_float_value(
         sum(map(lambda x: x[0], posterior_mixture)), state.priors
     )
+    from IPython import embed
+
+    embed()
 
     if settings.debug:
         print("Normalizing constant pre-simplification:", normalizing_constant)
