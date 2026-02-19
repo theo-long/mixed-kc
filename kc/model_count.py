@@ -35,20 +35,13 @@ def _model_count(
 def model_count(
     bdd: _bdd.BDD,
     u: _bdd.Function,
-    latent_dim: int,
     weights: Mapping[
         int,
-        tuple[
-            WeightType, WeightType
-        ],
+        tuple[WeightType, WeightType],
     ],
 ):
     count: dict[_bdd._Ref, ObservationNode] = dict()
-    count[bdd.true] = ObservationNode(
-        IncrementalSystem(latent_dim), children=[LikelihoodNode(1.0)]
-    )
-    count[bdd.false] = ObservationNode(
-        IncrementalSystem(latent_dim), children=[LikelihoodNode(0.0)]
-    )
-    weight = _model_count(bdd, u, count, weights)
-    return weight.compute_posterior()
+    count[bdd.true] = LikelihoodNode(1.0)
+    count[bdd.false] = LikelihoodNode(0.0)
+    observation_trie = _model_count(bdd, u, count, weights)
+    return observation_trie.compute_posterior()

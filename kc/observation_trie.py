@@ -81,14 +81,37 @@ class IncrementalSystem:
                 final_result = result
         return final_result
 
+    @property
+    def A(self):
+        return (self.Q @ self.R).T
 
-@dataclass
+
+@dataclass(frozen=True)
 class LikelihoodNode:
     likelihood: LikelihoodType
 
-    def __mul__(self, other: LikelihoodType):
-        self.likelihood *= other  # type: ignore
-        return self
+    def __mul__(self, other: WeightType):
+        if self.likelihood == 0 or np.all(other == 0):
+            return None
+        if isinstance(other, LikelihoodType):
+            return LikelihoodNode(self.likelihood * other)
+        else:
+            node = ObservationNode(
+                IncrementalSystem(other.shape[0] - 1),
+                children=[LikelihoodNode(self.likelihood)],
+            )
+            node.observations.process_equation(other[1:], other[0])
+            return node
+
+    def __add__(
+        self, other: "ObservationNode | LikelihoodNode | None"
+    ) -> "ObservationNode | LikelihoodNode | None":
+        if other is None:
+            return LikelihoodNode(self.likelihood)
+        if isinstance(other, LikelihoodNode):
+            return LikelihoodNode(self.likelihood + other.likelihood)
+        if isinstance(other, ObservationNode):
+            return ObservationNode(self.observations, children=[self, other])
 
     def _recursive_compute_posterior(
         self, posterior_mixture: list[tuple[float, NDArray, NDArray]]
@@ -114,13 +137,18 @@ class ObservationNode:
     def add_obs(self, observation_vector: NDArray):
         raise NotImplementedError()
 
-    def __add__(self, other: "ObservationNode") -> "ObservationNode":
-        if not isinstance(other, ObservationNode):
-            raise TypeError
+    def __add__(
+        self, other: "ObservationNode | LikelihoodNode | None"
+    ) -> "ObservationNode | LikelihoodNode | None":
+        if other is None:
+            return self
 
         return ObservationNode(
             IncrementalSystem(self.observations.n), children=[self, other]
         )
+
+    def __radd__(self, other):
+        return self.__add__(other)
 
     def _collect_qr_update_recursive(self, qr: IncrementalSystem):
         """Recursively check if some sequence of observations is still valid."""
@@ -150,6 +178,8 @@ class ObservationNode:
 
     def __mul__(self, other: WeightType) -> "ObservationNode | LikelihoodNode | None":
         if isinstance(other, LikelihoodType):
+            if other == 0:
+                return None
             new_children = []
             for child in self.children:
                 child *= other

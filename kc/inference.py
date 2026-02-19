@@ -26,15 +26,11 @@ def run_kc(expr: PExpr):
     posterior_mixture = model_count(
         state.bdd,
         state.observes_all_hold,
-        state.gaussian_count,
         state.weights,
     )
     normalizing_constant = get_float_value(
         sum(map(lambda x: x[0], posterior_mixture)), state.priors
     )
-    from IPython import embed
-
-    embed()
 
     if settings.debug:
         print("Normalizing constant pre-simplification:", normalizing_constant)
@@ -51,11 +47,9 @@ def run_kc(expr: PExpr):
         posterior_mixture_with_val = model_count(
             state.bdd,
             val & state.observes_all_hold,
-            state.gaussian_count,
             state.weights,
         )
         unnormalized_prob = sum(map(lambda x: x[0], posterior_mixture_with_val))
-
         if settings.debug:
             print("Unnormalized prob pre-simplification:", unnormalized_prob)
         unnormalized_prob = get_float_value(unnormalized_prob, state.priors)
