@@ -6,9 +6,9 @@ import numpy as np
 import scipy.linalg
 from numpy.typing import NDArray
 
+from kc.config import settings
 from kc.gaussian_math import get_gaussian_posterior, log_score_singular
 from kc.types import LikelihoodType, WeightType, epsilon
-from kc.config import settings
 
 
 class UpdateResult(Enum):
@@ -58,6 +58,12 @@ class IncrementalSystem:
             return UpdateResult.REDUNDANT
 
         # CASE B: Independent -> Use Scipy to Update
+        # B1: Empty QR
+        elif self.Q.shape[1] == 0:
+            self.Q, self.R = scipy.linalg.qr(v.reshape(-1, 1))
+            self.b = np.array([c])
+            return UpdateResult.UPDATE
+        # B2: merge into existing QR
         else:
             # We are adding a row to A, which is a COLUMN to A.T
             # We insert vector 'v' at the end (index k=m) of the decomposition
