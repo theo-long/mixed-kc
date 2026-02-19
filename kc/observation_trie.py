@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 
 from kc.gaussian_math import get_gaussian_posterior, log_score_singular
 from kc.types import LikelihoodType, WeightType, epsilon
+from kc.config import settings
 
 
 class UpdateResult(Enum):
@@ -91,10 +92,10 @@ class LikelihoodNode:
     likelihood: LikelihoodType
 
     def __mul__(self, other: WeightType):
-        if self.likelihood == 0 or np.all(other == 0):
-            return None
         if isinstance(other, LikelihoodType):
             return LikelihoodNode(self.likelihood * other)
+        elif self.likelihood == 0:
+            return LikelihoodNode(0.0)
         else:
             node = ObservationNode(
                 IncrementalSystem(other.shape[0] - 1),
@@ -104,13 +105,13 @@ class LikelihoodNode:
             return node
 
     def __add__(
-        self, other: "ObservationNode | LikelihoodNode | None"
-    ) -> "ObservationNode | LikelihoodNode | None":
-        if other is None:
-            return LikelihoodNode(self.likelihood)
+        self, other: "ObservationNode | LikelihoodNode"
+    ) -> "ObservationNode | LikelihoodNode":
         if isinstance(other, LikelihoodNode):
             return LikelihoodNode(self.likelihood + other.likelihood)
-        if isinstance(other, ObservationNode):
+        elif self.likelihood == 0:
+            return other
+        else:
             return ObservationNode(self.observations, children=[self, other])
 
     def _recursive_compute_posterior(
@@ -126,6 +127,9 @@ class LikelihoodNode:
     def __str__(self):
         return f"LikelihoodNode(val={self.likelihood})"
 
+    def compute_posterior(self):
+        return [(self.likelihood, np.zeros((0, 0)), np.eye(0))]
+
 
 @dataclass
 class ObservationNode:
@@ -138,14 +142,18 @@ class ObservationNode:
         raise NotImplementedError()
 
     def __add__(
-        self, other: "ObservationNode | LikelihoodNode | None"
-    ) -> "ObservationNode | LikelihoodNode | None":
-        if other is None:
+        self, other: "ObservationNode | LikelihoodNode"
+    ) -> "ObservationNode | LikelihoodNode":
+        if isinstance(other, ObservationNode):
+            return ObservationNode(
+                IncrementalSystem(self.observations.n), children=[self, other]
+            )
+        elif other.likelihood == 0:
             return self
-
-        return ObservationNode(
-            IncrementalSystem(self.observations.n), children=[self, other]
-        )
+        else:
+            return ObservationNode(
+                IncrementalSystem(self.observations.n), children=[self, other]
+            )
 
     def __radd__(self, other):
         return self.__add__(other)
@@ -154,7 +162,7 @@ class ObservationNode:
         """Recursively check if some sequence of observations is still valid."""
         result = qr.merge(self.observations)
         if result == UpdateResult.INCOMPATIBLE:
-            return None
+            return LikelihoodNode(0.0)
 
         new_children = []
         for i in range(len(self.children)):
@@ -174,12 +182,12 @@ class ObservationNode:
         if self.children:
             return self
 
-        return None
+        return LikelihoodNode(0.0)
 
-    def __mul__(self, other: WeightType) -> "ObservationNode | LikelihoodNode | None":
+    def __mul__(self, other: WeightType) -> "ObservationNode | LikelihoodNode":
         if isinstance(other, LikelihoodType):
             if other == 0:
-                return None
+                return LikelihoodNode(0.0)
             new_children = []
             for child in self.children:
                 child *= other
@@ -190,15 +198,16 @@ class ObservationNode:
 
         result = self.observations.process_equation(other[1:], other[0])
         if result == UpdateResult.INCOMPATIBLE:
-            return None
+            return LikelihoodNode(0.0)
 
         new_children = []
         for i in range(len(self.children)):
             child = self.children[i]
             if isinstance(child, ObservationNode):
                 child = child._collect_qr_update_recursive(deepcopy(self.observations))
-            if child:
-                new_children.append(child)
+            if isinstance(child, LikelihoodNode) and child.likelihood == 0:
+                continue
+            new_children.append(child)
 
         self.children = new_children
         # If there is a single observation node child, collapse them together
@@ -209,18 +218,15 @@ class ObservationNode:
 
         if self.children:
             return self
-        return None
+        return LikelihoodNode(0.0)
 
-    def __rmul__(self, other: WeightType) -> "ObservationNode | LikelihoodNode | None":
+    def __rmul__(self, other: WeightType) -> "ObservationNode | LikelihoodNode":
         return self.__mul__(other)
 
-    def _recursive_compute_posterior(
-        self, posterior_mixture: list[tuple[float, NDArray, NDArray]]
-    ):
-        # If no observations in this node, no need to update
+    def _apply_observations(self, posterior_mixture):
         if self.observations.R.size:
-            for i in range(len(posterior_mixture)):
-                likelihood, mu, cov = posterior_mixture[i]
+            new_posterior_mixture = []
+            for likelihood, mu, cov in posterior_mixture:
                 log_score = log_score_singular(
                     mu,
                     cov,
@@ -238,8 +244,27 @@ class ObservationNode:
                     R=self.observations.R,
                     b=self.observations.b,
                 )
-                posterior_mixture[i] = (likelihood, mu_new, cov_new)
+                if settings.debug:
+                    print(
+                        "Updated posterior",
+                        (mu, cov),
+                        "to\n",
+                        (mu_new, cov_new),
+                        f"with log score {log_score: .4f}",
+                        "and epsilon factor",
+                        self.observations.Q.shape[1],
+                    )
+                new_posterior_mixture.append((likelihood, mu_new, cov_new))
+            return new_posterior_mixture
+        else:
+            if settings.debug:
+                print("No observations in this node, skipping update")
+            return posterior_mixture
 
+    def _recursive_compute_posterior(
+        self, posterior_mixture: list[tuple[float, NDArray, NDArray]]
+    ):
+        posterior_mixture = self._apply_observations(posterior_mixture)
         new_posterior_mixture = []
         for child in self.children:
             new_posterior_mixture.extend(

@@ -183,4 +183,5 @@ def test_complex_sequence():
     # Check incompatible
     obs4 = np.array([4.0, 1.0, 1.0])  # x0 + x1 = 4 -> Incompatible
     node = node * obs4
-    assert node is None
+    assert isinstance(node, LikelihoodNode)
+    assert node.likelihood == 0.0
