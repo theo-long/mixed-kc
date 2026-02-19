@@ -6,7 +6,8 @@ import numpy as np
 import scipy.linalg
 from numpy.typing import NDArray
 
-from kc.types import LikelihoodType, PosteriorUpdateType
+from kc.gaussian_math import get_gaussian_posterior, log_score_singular
+from kc.types import LikelihoodType, WeightType, epsilon
 
 
 class UpdateResult(Enum):
@@ -89,6 +90,16 @@ class LikelihoodNode:
         self.likelihood *= other  # type: ignore
         return self
 
+    def _recursive_compute_posterior(
+        self, posterior_mixture: list[tuple[float, NDArray, NDArray]]
+    ):
+        new_posterior_mixture = []
+        for i in range(len(posterior_mixture)):
+            likelihood, mu, cov = posterior_mixture[i]
+            new_posterior_mixture.append((likelihood * self.likelihood, mu, cov)) # type: ignore
+
+        return new_posterior_mixture
+
 
 @dataclass
 class ObservationNode:
@@ -135,7 +146,7 @@ class ObservationNode:
         return None
 
     def __mul__(
-        self, other: LikelihoodType | PosteriorUpdateType
+        self, other: WeightType
     ) -> "ObservationNode | LikelihoodNode | None":
         if isinstance(other, LikelihoodType):
             new_children = []
@@ -170,6 +181,45 @@ class ObservationNode:
         return None
 
     def __rmul__(
-        self, other: LikelihoodType | PosteriorUpdateType
+        self, other: WeightType
     ) -> "ObservationNode | LikelihoodNode | None":
         return self.__mul__(other)
+
+    def _recursive_compute_posterior(
+        self, posterior_mixture: list[tuple[float, NDArray, NDArray]]
+    ):
+        # If no observations in this node, no need to update
+        if self.observations.R.size:
+            for i in range(len(posterior_mixture)):
+                likelihood, mu, cov = posterior_mixture[i]
+                log_score = log_score_singular(
+                    mu,
+                    cov,
+                    Q=self.observations.Q,
+                    R=self.observations.R,
+                    b=self.observations.b,
+                )
+                likelihood *= np.exp(log_score) * (
+                    epsilon ** self.observations.Q.shape[1]
+                )
+                mu_new, cov_new = get_gaussian_posterior(
+                    mu,
+                    cov,
+                    Q=self.observations.Q,
+                    R=self.observations.R,
+                    b=self.observations.b,
+                )
+                posterior_mixture[i] = (likelihood, mu_new, cov_new)
+
+        new_posterior_mixture = []
+        for child in self.children:
+            new_posterior_mixture.extend(
+                child._recursive_compute_posterior(posterior_mixture)
+            )
+        return new_posterior_mixture
+
+    def compute_posterior(self):
+        cov = np.eye(self.observations.n)
+        mu = np.zeros((self.observations.n, 1))
+        posterior_mixture = [(1.0, mu, cov)]
+        return self._recursive_compute_posterior(posterior_mixture)

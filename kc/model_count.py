@@ -1,12 +1,9 @@
-from typing import TYPE_CHECKING
+from typing import Mapping
 
 import dd.autoref as _bdd
-import sympy
 
-from kc.types import WeightType, get_float_value
-
-if TYPE_CHECKING:
-    from kc.real_values import DistributionWithMoments
+from kc.observation_trie import IncrementalSystem, LikelihoodNode, ObservationNode
+from kc.types import WeightType
 
 
 def is_negated(u: _bdd.Function) -> bool:
@@ -16,8 +13,8 @@ def is_negated(u: _bdd.Function) -> bool:
 def _model_count(
     bdd: _bdd.BDD,
     u: _bdd.Function | _bdd._Ref,
-    count: dict[_bdd._Ref, WeightType],
-    weights: dict[int, tuple[WeightType, WeightType]],
+    count: Mapping[_bdd._Ref, ObservationNode],
+    weights: Mapping[int, tuple[WeightType, WeightType]],
 ):
     if u in count:
         return count[u]
@@ -31,7 +28,7 @@ def _model_count(
     left_count = _model_count(bdd, low, count, weights)
     right_count = _model_count(bdd, high, count, weights)
     (wpos, wneg) = weights[u.var]
-    count[u] = wpos * right_count + wneg * left_count
+    count[u] = right_count * wpos + left_count * wneg
     return count[u]
 
 
@@ -39,14 +36,19 @@ def model_count(
     bdd: _bdd.BDD,
     u: _bdd.Function,
     latent_dim: int,
-    weights: dict[int, tuple[WeightType, WeightType]],
-    priors: dict[sympy.Symbol, "DistributionWithMoments"],
+    weights: Mapping[
+        int,
+        tuple[
+            WeightType, WeightType
+        ],
+    ],
 ):
-    count: dict[_bdd._Ref, WeightType] = dict()
-    count[bdd.true] = WeightType.from_likelihood(1.0, latent_dim)
-    count[bdd.false] = WeightType.from_likelihood(0.0, latent_dim)
+    count: dict[_bdd._Ref, ObservationNode] = dict()
+    count[bdd.true] = ObservationNode(
+        IncrementalSystem(latent_dim), children=[LikelihoodNode(1.0)]
+    )
+    count[bdd.false] = ObservationNode(
+        IncrementalSystem(latent_dim), children=[LikelihoodNode(0.0)]
+    )
     weight = _model_count(bdd, u, count, weights)
-    return [
-        (get_float_value(likelihood, priors), posterior_update)
-        for likelihood, posterior_update in weight
-    ]
+    return weight.compute_posterior()

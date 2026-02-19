@@ -100,7 +100,13 @@ class KCState(RandomVariableCounter):
         self.bdd = _bdd.BDD()
         self.flips = 0
         self.flip_params = 0
-        self.weights: dict[int, tuple[WeightType, WeightType]] = {}
+        self.weights: dict[
+            int,
+            tuple[
+                WeightType,
+                WeightType,
+            ],
+        ] = {}
         self.priors: dict[sympy.Symbol, DistributionWithMoments] = {}
         self._observes_all_hold = self.bdd.true
         self.truncations = preprocess_state.truncation_counter.truncations
@@ -134,10 +140,10 @@ class KCState(RandomVariableCounter):
         val: float,
     ):
         """Create a numpy array representing observation v^T x = val"""
-        v = np.zeros((1, self.gaussian_count + 1))
+        v = np.zeros(self.gaussian_count + 1)
         for var in vars:
-            v[0, var.var] = var.scale
-        v[0, 0] = val
+            v[var.var] = var.scale
+        v[0] = val
         return v
 
     def get_gaussian_sum_symbolic_observe_expression(
@@ -164,15 +170,8 @@ class KCState(RandomVariableCounter):
         self.bdd.declare(node_name)
         self.set_weight(
             node_name,
-            WeightType(
-                [
-                    (
-                        1.0,
-                        self.create_observation_vector(new_vars, val),
-                    )
-                ]
-            ),
-            WeightType.from_likelihood(1.0, self.gaussian_count),
+            self.create_observation_vector(new_vars, val),
+            1.0,
         )
         return self.bdd.var(node_name)
 
@@ -249,8 +248,8 @@ class KCState(RandomVariableCounter):
             weight /= scale
         self.set_weight(
             equality_node_name,
-            WeightType.from_likelihood(weight, self.gaussian_count),
-            WeightType.from_likelihood(1.0, self.gaussian_count),
+            weight,
+            1.0,
         )
         self.bdd_equality_nodes[var].add(equality_node_name)
         return self.bdd.var(equality_node_name)
@@ -282,8 +281,8 @@ class KCState(RandomVariableCounter):
 
             self.set_weight(
                 interval_node_name,
-                WeightType.from_likelihood(flip_prob, self.gaussian_count),
-                WeightType.from_likelihood(1.0 - flip_prob, self.gaussian_count),
+                flip_prob,
+                1.0 - flip_prob,
             )
 
         return sorted_thresholds
