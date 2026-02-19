@@ -100,6 +100,9 @@ class LikelihoodNode:
 
         return new_posterior_mixture
 
+    def __str__(self):
+        return f"LikelihoodNode(val={self.likelihood})"
+
 
 @dataclass
 class ObservationNode:
@@ -219,3 +222,24 @@ class ObservationNode:
         mu = np.zeros((self.observations.n, 1))
         posterior_mixture = [(1.0, mu, cov)]
         return self._recursive_compute_posterior(posterior_mixture)
+
+    def _tree_str(self, prefix="", is_last=True):
+        res = ""
+        connector = "└── " if is_last else "├── "
+
+        num_obs = len(self.observations.b)
+        node_str = f"ObservationNode(n_eqs={num_obs})"
+        res += f"{prefix}{connector}{node_str}\n"
+
+        new_prefix = prefix + ("    " if is_last else "│   ")
+        for i, child in enumerate(self.children):
+            child_is_last = i == len(self.children) - 1
+            if hasattr(child, "_tree_str"):
+                res += child._tree_str(new_prefix, child_is_last)
+            else:  # LikelihoodNode
+                child_connector = "└── " if child_is_last else "├── "
+                res += f"{new_prefix}{child_connector}{child}\n"
+        return res
+
+    def __str__(self):
+        return self._tree_str(prefix="", is_last=True).replace("└── ", "", 1).strip()
