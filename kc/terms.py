@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
@@ -15,6 +16,78 @@ from kc.types import InequalityLiteral
 
 if TYPE_CHECKING:
     from kc.state import KCState
+
+
+class EnumType:
+    def __init__(self, name: str, values: Sequence[str]):
+        self.name = name
+        self.values = values
+        self.n_bits = math.ceil(math.log2(len(values))) if len(values) > 1 else 1
+        self._members = {val: EnumValue(self, i) for i, val in enumerate(values)}
+
+    def __getattr__(self, name: str) -> "EnumValue":
+        if name in self._members:
+            return self._members[name]
+        raise AttributeError(f"'{self.name}' has no attribute '{name}'")
+
+
+@dataclass
+class EnumResult:
+    enum_type: EnumType
+    bits: tuple
+
+    def preprocess(self, env, state):
+        return self
+
+
+@dataclass
+class EnumValue(AExpr):
+    enum_type: EnumType
+    index: int
+
+    def kc(self, env, state):
+        bits = []
+        for i in range(self.enum_type.n_bits):
+            bit_val = bool((self.index >> i) & 1)
+            bits.append(state.bdd.true if bit_val else state.bdd.false)
+        return EnumResult(self.enum_type, tuple(bits))
+
+    def preprocess(self, env, state):
+        bits = tuple(None for _ in range(self.enum_type.n_bits))
+        return EnumResult(self.enum_type, bits)
+
+
+@dataclass
+class Equality(PExpr):
+    left: PExpr
+    right: PExpr
+
+    def kc(self, env, state):
+        l_res = self.left.kc(env, state)
+        r_res = self.right.kc(env, state)
+
+        if isinstance(l_res, EnumResult) and isinstance(r_res, EnumResult):
+            if l_res.enum_type != r_res.enum_type:
+                raise TypeError(
+                    f"Cannot compare different Enum types: {l_res.enum_type.name} and {r_res.enum_type.name}"
+                )
+
+            eq_bdd = state.bdd.true
+            for l_bit, r_bit in zip(l_res.bits, r_res.bits):
+                bits_eq = (l_bit & r_bit) | (~l_bit & ~r_bit)
+                eq_bdd = eq_bdd & bits_eq
+            return eq_bdd
+        elif hasattr(l_res, "to_expr") and hasattr(r_res, "to_expr"):
+            return (l_res & r_res) | (~l_res & ~r_res)
+        else:
+            raise TypeError(
+                f"Equality only supported between Enums or Booleans, got {type(l_res)} and {type(r_res)}"
+            )
+
+    def preprocess(self, env, state):
+        self.left.preprocess(env, state)
+        self.right.preprocess(env, state)
+        return
 
 
 @dataclass
@@ -80,6 +153,16 @@ class IfThenElse(PExpr):
 
         if isinstance(then_result, RealValue):
             return merge_real_values(condition_bdd, then_result, else_result)
+        elif isinstance(then_result, EnumResult):
+            assert (
+                isinstance(else_result, EnumResult)
+                and then_result.enum_type == else_result.enum_type
+            )
+            new_bits = tuple(
+                (condition_bdd & t) | (~condition_bdd & e)
+                for t, e in zip(then_result.bits, else_result.bits)
+            )
+            return EnumResult(then_result.enum_type, new_bits)
         else:
             return (condition_bdd & then_result) | (~condition_bdd & else_result)
 
@@ -89,6 +172,12 @@ class IfThenElse(PExpr):
         else_result = self.else_expr.preprocess(env, state)
         if isinstance(then_result, RealValue):
             return merge_real_values_ignore_cond(then_result, else_result)
+        elif isinstance(then_result, EnumResult):
+            assert (
+                isinstance(else_result, EnumResult)
+                and then_result.enum_type == else_result.enum_type
+            )
+            return EnumResult(then_result.enum_type, then_result.bits)
         else:
             return
 

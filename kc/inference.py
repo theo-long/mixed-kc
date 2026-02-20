@@ -8,6 +8,7 @@ from kc.model_count import model_count
 from kc.real_values import GaussianSum, GaussianVariable, Zero
 from kc.state import KCState, PreprocessState
 from kc.types import get_float_value
+from kc.terms import EnumResult
 
 
 def run_kc(expr: PExpr):
@@ -69,5 +70,31 @@ def run_kc(expr: PExpr):
                 (weight / normalizing_constant, (expr_mu, expr_cov))
             )
         return normalized_posterior, normalizing_constant
+    elif isinstance(val, EnumResult):
+        probs = {}
+        for i, enum_str in enumerate(val.enum_type.values):
+            constraint = state.bdd.true
+            for bit_i in range(val.enum_type.n_bits):
+                bit_val = bool((i >> bit_i) & 1)
+                expected_bdd = state.bdd.true if bit_val else state.bdd.false
+                bits_eq = (val.bits[bit_i] & expected_bdd) | (
+                    ~val.bits[bit_i] & ~expected_bdd
+                )
+                constraint = constraint & bits_eq
+
+            posterior_mixture_with_val = model_count(
+                state.bdd,
+                constraint & state.observes_all_hold,
+                state.weights,
+            )
+            unnormalized_prob = sum(map(lambda x: x[0], posterior_mixture_with_val))
+            if settings.debug:
+                print(
+                    f"Unnormalized prob for {enum_str} pre-simplification:",
+                    unnormalized_prob,
+                )
+            unnormalized_prob = get_float_value(unnormalized_prob, state.priors)
+            probs[enum_str] = unnormalized_prob / normalizing_constant
+        return probs, normalizing_constant
     else:
         raise TypeError(f"Cannot perform inference for value of type {type(val)}")

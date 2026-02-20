@@ -17,6 +17,7 @@ from kc import (
 )
 from scipy.stats import norm
 from kc.real_values import Sum
+from kc.terms import Categorical, EnumType, Equality
 
 
 def gaussian_pdf(mean, std, val):
@@ -811,6 +812,36 @@ p30 = Let(
 )
 expected_p30 = 0.42356749843592556
 
+# Observe a Categorical over Enums
+Color = EnumType("Color", ["R", "G", "B"])
+p_enum = Let(
+    "color",
+    Categorical([Color.R, Color.G, Color.B], [0.1, 0.4, 0.5]),
+    Let(
+        "b",
+        Flip(0.5),
+        # If flip is true, it stays the same, else it's R
+        Let(
+            "final_color",
+            IfThenElse(Var("b"), Var("color"), Color.R),
+            Var("final_color"),
+        ),
+    ),
+)
+# If b is true (0.5), we get [0.1, 0.4, 0.5]
+# If b is false (0.5), we get [1.0, 0.0, 0.0]
+# Total prob: R = 0.5*0.1 + 0.5*1.0 = 0.55
+# G = 0.5*0.4 = 0.20
+# B = 0.5*0.5 = 0.25
+expected_p_enum = {"R": 0.55, "G": 0.20, "B": 0.25}
+
+p_enum_eq = Let(
+    "color",
+    Categorical([Color.R, Color.G, Color.B], [0.1, 0.4, 0.5]),
+    Let("_", Observe(Equality(Var("color"), Color.G)), Var("color")),
+)
+expected_p_enum_eq = {"R": 0.0, "G": 1.0, "B": 0.0}
+
 
 @pytest.mark.parametrize(
     "name, program, expected_prob, expected_z",
@@ -845,6 +876,8 @@ expected_p30 = 0.42356749843592556
         ("p28", p28, expected_p28, None),
         ("p29", p29, expected_p29, None),
         ("p30", p30, expected_p30, None),
+        ("p_enum", p_enum, expected_p_enum, None),
+        ("p_enum_eq", p_enum_eq, expected_p_enum_eq, None),
     ],
 )
 def test_kc_programs(name, program, expected_prob, expected_z):
@@ -853,9 +886,15 @@ def test_kc_programs(name, program, expected_prob, expected_z):
 
     # Check if probability matches expected
     if prob is not None and expected_prob is not None:
-        assert abs(prob - expected_prob) <= 1e-8, (
-            f"Probability mismatch for {name}: {prob} != {expected_prob}"
-        )
+        if isinstance(prob, dict) and isinstance(expected_prob, dict):
+            for k, v in expected_prob.items():
+                assert abs(prob.get(k, 0.0) - v) <= 1e-8, (
+                    f"Probability mismatch for {name} at key {k}: {prob.get(k)} != {v}"
+                )
+        else:
+            assert abs(prob - expected_prob) <= 1e-8, (
+                f"Probability mismatch for {name}: {prob} != {expected_prob}"
+            )
     elif prob is None and expected_prob is None:
         pass  # Both None is fine
     else:
