@@ -842,6 +842,48 @@ p_enum_eq = Let(
 )
 expected_p_enum_eq = {"R": 0.0, "G": 1.0, "B": 0.0}
 
+p_enum_with_gaussians = Let(
+    "color",
+    Categorical([Color.R, Color.G, Color.B], [0.5, 0.25, 0.25]),
+    Let(
+        "b",
+        Flip(0.5),
+        Let(
+            "x",
+            IfThenElse(
+                IfThenElse(
+                    Var("b"),
+                    Equality(Var("color"), Color.G),
+                    Equality(Var("color"), Color.R),
+                ),
+                Gaussian(0, 1),
+                Gaussian(0, 2),
+            ),
+            Let(
+                "_",
+                ObserveReal(Var("x"), 0.0),
+                Var("b"),
+            ),
+        ),
+    ),
+)
+# We are twice as likely to observe 0 if the IfThen condition is true
+# If b is true, color is G, IfThen condition prob is 0.25, prob of observing 0 is 0.5 * 0.25 * 1 + 0.5 * 0.75 * 0.5 = 0.3125
+# If b is false, color is R, IfThen condition prob is 0.5, prob of observing 0 is 0.5 * 0.5 * 1 + 0.5 * 0.5 * 0.5 = 0.375
+expected_p_enum_with_gaussians = 0.3125 / (0.3125 + 0.375)
+
+# impossible enum
+p_enum_impossible = Let(
+    "color",
+    Categorical([Color.R, Color.G, Color.B], [0.5, 0.25, 0.25]),
+    IfThenElse(
+        Equality(Var("color"), Color.R),
+        Observe(Equality(Var("color"), Color.G)),
+        Observe(Equality(Var("color"), Color.R)),
+    ),
+)
+expected_p_enum_impossible = None
+
 
 @pytest.mark.parametrize(
     "name, program, expected_prob, expected_z",
@@ -878,6 +920,18 @@ expected_p_enum_eq = {"R": 0.0, "G": 1.0, "B": 0.0}
         ("p30", p30, expected_p30, None),
         ("p_enum", p_enum, expected_p_enum, None),
         ("p_enum_eq", p_enum_eq, expected_p_enum_eq, None),
+        (
+            "p_enum_with_gaussians",
+            p_enum_with_gaussians,
+            expected_p_enum_with_gaussians,
+            None,
+        ),
+        (
+            "p_enum_impossible",
+            p_enum_impossible,
+            expected_p_enum_impossible,
+            None,
+        ),
     ],
 )
 def test_kc_programs(name, program, expected_prob, expected_z):
