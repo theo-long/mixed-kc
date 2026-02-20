@@ -81,15 +81,14 @@ def test_incremental_system_merge_incompatible():
 def test_observation_node_structure():
     n_features = 2
 
-    child1 = ObservationNode(IncrementalSystem(n_features))
-    child2 = ObservationNode(IncrementalSystem(n_features))
+    child1 = ObservationNode(IncrementalSystem(n_features), children=[LikelihoodNode(1)])
+    child2 = ObservationNode(IncrementalSystem(n_features), children=[LikelihoodNode(2)])
 
-    # Create a tree: root -> [child1, child2] ?
     # __add__ creates a NEW parent
     parent = child1 + child2
     assert len(parent.children) == 2
-    assert parent.children[0] is child1
-    assert parent.children[1] is child2
+    assert parent.children[0].likelihood == 1
+    assert parent.children[1].likelihood == 2
 
 
 def test_observation_node_update():
