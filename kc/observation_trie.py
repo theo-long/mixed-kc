@@ -110,6 +110,7 @@ class LikelihoodNode:
             node.observations.process_equation(other[1:], other[0])
             return node
 
+    # TODO - refactor so that Obs and Likelihood Nodes share the same __add__ method
     def __add__(
         self, other: "ObservationNode | LikelihoodNode"
     ) -> "ObservationNode | LikelihoodNode":
@@ -118,8 +119,21 @@ class LikelihoodNode:
         elif self.likelihood == 0:
             return other
         else:
+            children = []
+            likelihood_value = self.likelihood
+            if other.num_obs == 0:
+                for child in other.children:
+                    if isinstance(child, LikelihoodNode):
+                        likelihood_value += child.likelihood
+                    else:
+                        children.append(child)
+            else:
+                children = [other]
+            children.append(LikelihoodNode(self.likelihood))
+            if len(children) == 1:
+                return children[0]
             return ObservationNode(
-                IncrementalSystem(other.observations.n), children=[self, other]
+                IncrementalSystem(other.observations.n), children=children
             )
 
     def _recursive_compute_posterior(
@@ -146,25 +160,30 @@ class ObservationNode:
     observations: IncrementalSystem
     children: list["ObservationNode | LikelihoodNode"] = field(default_factory=list)
 
-    def add_obs(self, observation_vector: NDArray):
-        raise NotImplementedError()
+    @property
+    def num_obs(self):
+        return len(self.observations.b)
 
     def __add__(
         self, other: "ObservationNode | LikelihoodNode"
     ) -> "ObservationNode | LikelihoodNode":
         if isinstance(other, ObservationNode):
+            children = []
+            # TODO - might you be able to merge the two obs nodes if they share observations?
+            for node in [self, other]:
+                if node.num_obs == 0:
+                    children.extend(node.children)
+                else:
+                    children.append(node)
             return ObservationNode(
-                IncrementalSystem(self.observations.n), children=[self, other]
+                IncrementalSystem(self.observations.n), children=children
             )
         elif other.likelihood == 0:
             return self
         else:
             return ObservationNode(
-                IncrementalSystem(self.observations.n), children=[self, other]
+                IncrementalSystem(self.observations.n), children=[self, LikelihoodNode(other.likelihood)]
             )
-
-    def __radd__(self, other):
-        return self.__add__(other)
 
     def _collect_qr_update_recursive(self, qr: IncrementalSystem):
         """Recursively check if some sequence of observations is still valid."""
@@ -290,8 +309,7 @@ class ObservationNode:
         res = ""
         connector = "└── " if is_last else "├── "
 
-        num_obs = len(self.observations.b)
-        node_str = f"ObservationNode(n_eqs={num_obs})"
+        node_str = f"ObservationNode(n_eqs={self.num_obs})"
         res += f"{prefix}{connector}{node_str}\n"
 
         new_prefix = prefix + ("    " if is_last else "│   ")
