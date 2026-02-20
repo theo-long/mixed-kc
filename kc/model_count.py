@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Mapping
 
 import dd.autoref as _bdd
@@ -25,8 +26,8 @@ def _model_count(
     else:
         low, high = (u.low, u.high)
 
-    left_count = _model_count(bdd, low, count, weights)
-    right_count = _model_count(bdd, high, count, weights)
+    left_count = deepcopy(_model_count(bdd, low, count, weights))
+    right_count = deepcopy(_model_count(bdd, high, count, weights))
     (wpos, wneg) = weights[u.var]
     count[u] = right_count * wpos + left_count * wneg
     return count[u]

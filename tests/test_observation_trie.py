@@ -81,8 +81,12 @@ def test_incremental_system_merge_incompatible():
 def test_observation_node_structure():
     n_features = 2
 
-    child1 = ObservationNode(IncrementalSystem(n_features), children=[LikelihoodNode(1)])
-    child2 = ObservationNode(IncrementalSystem(n_features), children=[LikelihoodNode(2)])
+    child1 = ObservationNode(
+        IncrementalSystem(n_features), children=[LikelihoodNode(1)]
+    )
+    child2 = ObservationNode(
+        IncrementalSystem(n_features), children=[LikelihoodNode(2)]
+    )
 
     # __add__ creates a NEW parent
     # TODO - add should eliminate the top-level nodes entirely
@@ -137,7 +141,7 @@ def test_observation_node_pruning():
     assert updated_root is not None
     assert isinstance(updated_root, ObservationNode)
     assert len(updated_root.children) == 1
-    assert updated_root.children[0] is branch1.children[0]
+    assert updated_root.children[0].likelihood == branch1.children[0].likelihood
 
 
 def test_observation_node_likelihood_update():

@@ -152,6 +152,10 @@ class LikelihoodNode:
     def compute_posterior(self):
         return [(self.likelihood, np.zeros((0, 0)), np.eye(0))]
 
+    @property
+    def num_obs_to_root(self):
+        return 0
+
 
 @dataclass
 class ObservationNode:
@@ -163,6 +167,10 @@ class ObservationNode:
     @property
     def num_obs(self):
         return len(self.observations.b)
+
+    @property
+    def num_obs_to_root(self):
+        self.num_obs + max(map(lambda x: x.num_obs_to_root, self.children))
 
     def __add__(
         self, other: "ObservationNode | LikelihoodNode"
@@ -182,7 +190,8 @@ class ObservationNode:
             return self
         else:
             return ObservationNode(
-                IncrementalSystem(self.observations.n), children=[self, LikelihoodNode(other.likelihood)]
+                IncrementalSystem(self.observations.n),
+                children=[self, LikelihoodNode(other.likelihood)],
             )
 
     def _collect_qr_update_recursive(self, qr: IncrementalSystem):
@@ -219,7 +228,7 @@ class ObservationNode:
             for child in self.children:
                 child *= other
                 if child:
-                    new_children.append(child)
+                    new_children.append(deepcopy(child))
             self.children = new_children
             return self
 
@@ -234,7 +243,7 @@ class ObservationNode:
                 child = child._collect_qr_update_recursive(deepcopy(self.observations))
             if isinstance(child, LikelihoodNode) and child.likelihood == 0:
                 continue
-            new_children.append(child)
+            new_children.append(deepcopy(child))
 
         self.children = new_children
         # If there is a single observation node child, collapse them together
