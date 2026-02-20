@@ -123,12 +123,32 @@ class RealVariable(RealValue):
 
 class AffineTransformable(ABC):
     @abstractmethod
-    def apply_affine(self, scale: float, shift: float) -> Self | "Zero":
+    def apply_affine(
+        self, scale: float, shift: float
+    ) -> Self | "Zero" | "RealConstant":
         raise NotImplementedError()
+
+
+@dataclass(eq=True, frozen=True)
+class RealConstant(RealVariable, AffineTransformable):
+    val: float
+
+    def apply_affine(self, scale: float, shift: float):
+        if scale == 0.0:
+            return RealConstant(shift)
+        return RealConstant(self.val * scale + shift)
+
+    def collect_real_truncation(self, env, state: "TruncationState"):
+        return self
+
+    def kc(self, env, state):
+        return self
 
 
 class Zero(RealVariable, AffineTransformable):
     def apply_affine(self, scale: float, shift: float):
+        if shift != 0.0:
+            return RealConstant(shift)
         return self
 
 
@@ -143,7 +163,7 @@ class GaussianVariable(RealVariable, AffineTransformable):
 
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
-            return Zero()
+            return RealConstant(shift) if shift != 0.0 else Zero()
         new_scale = self.scale * scale
         new_shift = self.shift * scale + shift
         return GaussianVariable(self.var, new_scale, new_shift)
@@ -169,7 +189,7 @@ class Truncatable:
 class TruncatableGaussianVariable(GaussianVariable, Truncatable):
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
-            return Zero()
+            return RealConstant(shift) if shift != 0.0 else Zero()
         new_scale = self.scale * scale
         new_shift = self.shift * scale + shift
         return TruncatableGaussianVariable(self.var, new_scale, new_shift)
@@ -199,7 +219,7 @@ class Union[T](RealValue, AffineTransformable):
 
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
-            return Zero()
+            return RealConstant(shift) if shift != 0.0 else Zero()
         assert all(isinstance(var, AffineTransformable) for var in self.values), (
             "All values must be AffineTransformable"
         )
@@ -208,7 +228,7 @@ class Union[T](RealValue, AffineTransformable):
 
     @property
     def truncatable(self):
-        return all(getattr(v, "truncatable") for v in self.values)
+        return all(getattr(v, "truncatable", False) for v in self.values)
 
 
 @dataclass(frozen=True, eq=True)
@@ -219,13 +239,17 @@ class GaussianSum(RealVariable, AffineTransformable):
 
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
-            return Zero()
+            return RealConstant(shift) if shift != 0.0 else Zero()
         new_rvs = []
         for rv in self.rvs:
-            if isinstance(rv, (GaussianVariable, Union)):
-                new_rvs.append(rv.apply_affine(scale, shift))
+            if isinstance(rv, (GaussianVariable, Union, RealConstant, Zero)):
+                new_rvs.append(rv.apply_affine(scale, 0.0))
             else:
-                raise TypeError("rv must be GaussianVariable or Union")
+                raise TypeError(
+                    "rv must be GaussianVariable, Union, RealConstant or Zero"
+                )
+        if shift != 0.0:
+            new_rvs.append(RealConstant(shift))
         return GaussianSum(frozenset(new_rvs))
 
     def collect_real_truncation(self, env, state: "TruncationState"):
@@ -239,6 +263,7 @@ class GaussianSum(RealVariable, AffineTransformable):
         # Combine Unions which are identical by counting occurrences
         new_vars: dict[int, GaussianVariable] = {}
         new_unions: dict[Union, int] = defaultdict(int)
+        constant_sum = 0.0
         for rv in itertools.chain(self.rvs, other.rvs):
             if isinstance(rv, GaussianVariable):
                 if rv.var in new_vars:
@@ -249,13 +274,21 @@ class GaussianSum(RealVariable, AffineTransformable):
                     new_vars[rv.var] = rv
             elif isinstance(rv, Union):
                 new_unions[rv] += 1
+            elif isinstance(rv, RealConstant):
+                constant_sum += rv.val
+            elif isinstance(rv, Zero):
+                pass
             else:
-                raise TypeError("rv must be GaussianVariable or Union")
+                raise TypeError(
+                    "rv must be GaussianVariable, Union, RealConstant or Zero"
+                )
         combined_unions = []
         for union, count in new_unions.items():
             for _ in range(count):
                 combined_unions.append(union.apply_affine(count, 0.0))
         new_rvs = list(new_vars.values()) + combined_unions
+        if constant_sum != 0.0:
+            new_rvs.append(RealConstant(constant_sum))
         return GaussianSum(frozenset(new_rvs))
 
 

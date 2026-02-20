@@ -299,8 +299,8 @@ class Literal(Expression):
     def to_ir_literal(self):
         if isinstance(self.value, bool):
             return terms.Const(self.value)
-        return (
-            self.value
+        return real_values.RealConstant(
+            float(self.value)
         )  # Float/Int are raw in IR for some things, but maybe need wrapping?
         # In kc, `Affine` takes `float` scale/shift. `Gaussian` takes `float`.
         # But `IfThenElse` takes `AExpr` / `PExpr`.

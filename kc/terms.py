@@ -5,6 +5,7 @@ from kc.base import AExpr, PExpr
 from kc.real_values import (
     GaussianSum,
     GaussianVariable,
+    RealConstant,
     RealValue,
     TruncatableGaussianVariable,
     Union,
@@ -56,6 +57,8 @@ class Flip(PExpr):
             prob_val = self.prob
         else:
             prob_val = self.prob.kc(env, state)
+            if isinstance(prob_val, RealConstant):
+                prob_val = prob_val.val
         state.set_weight(
             f"flip_{flip_id}",
             WeightType.from_likelihood(prob_val, state.gaussian_count),
@@ -196,6 +199,8 @@ def nonsymbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"
         )
     elif isinstance(symbolic_value, Union):
         clause = state.get_gaussian_union_equality_expression(symbolic_value, val)
+    elif isinstance(symbolic_value, RealConstant):
+        clause = state.bdd.true if symbolic_value.val == val else state.bdd.false
     else:
         raise ValueError(f"Unexpected type: {type(symbolic_value)}")
 
@@ -209,6 +214,8 @@ def symbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"):
         clause = state.get_gaussian_union_symbolic_observe_expression(
             symbolic_value, val
         )
+    elif isinstance(symbolic_value, RealConstant):
+        clause = state.bdd.true if symbolic_value.val == val else state.bdd.false
     else:
         raise ValueError(f"Unexpected type: {type(symbolic_value)}")
 
@@ -262,6 +269,29 @@ class Inequality(PExpr):
             clause = state.get_gaussian_union_inequality_expression(
                 symbolic_value, self.inequality, self.val
             )
+        elif isinstance(symbolic_value, RealConstant):
+            if self.inequality == "<":
+                clause = (
+                    state.bdd.true if symbolic_value.val < self.val else state.bdd.false
+                )
+            elif self.inequality == "<=":
+                clause = (
+                    state.bdd.true
+                    if symbolic_value.val <= self.val
+                    else state.bdd.false
+                )
+            elif self.inequality == ">":
+                clause = (
+                    state.bdd.true if symbolic_value.val > self.val else state.bdd.false
+                )
+            elif self.inequality == ">=":
+                clause = (
+                    state.bdd.true
+                    if symbolic_value.val >= self.val
+                    else state.bdd.false
+                )
+            else:
+                raise ValueError(f"Unknown inequality {self.inequality}")
         else:
             raise TypeError(f"Unexpected type: {type(symbolic_value)}")
         return clause
@@ -280,6 +310,8 @@ class Inequality(PExpr):
                 raise ValueError("Can only truncate TruncatableGaussian")
             for gv in symbolic_value.values:
                 state.add_truncation(gv.var, gv.scale, gv.shift, self.val)
+        elif isinstance(symbolic_value, RealConstant):
+            pass
         else:
             raise TypeError(
                 f"Unexpected type for symbolic_value: {type(symbolic_value)}"

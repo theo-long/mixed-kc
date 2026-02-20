@@ -15,6 +15,7 @@ from kc.real_values import (
     Gaussian,
     GaussianSum,
     GaussianVariable,
+    RealConstant,
     Union,
     Zero,
 )
@@ -77,7 +78,10 @@ class KCState(RandomVariableCounter):
         union_clause = self.bdd.false
         for f, v in zip(symbolic_value.formulae, symbolic_value.values):
             # get the observe clause for this value
-            clause = self.get_gaussian_sum_symbolic_observe_expression(v, val)
+            if isinstance(v, RealConstant):
+                clause = self.bdd.true if v.val == val else self.bdd.false
+            else:
+                clause = self.get_gaussian_sum_symbolic_observe_expression(v, val)
             guarded_clause = f & clause
             union_clause = union_clause | guarded_clause
         return union_clause
@@ -112,14 +116,20 @@ class KCState(RandomVariableCounter):
         new_vars: list[GaussianVariable] = []
         for v in rvs:
             assert not isinstance(v, Zero)
-            val -= v.shift
-            new_vars.append(
-                GaussianVariable(
-                    var=v.var,
-                    scale=v.scale,
-                    shift=0.0,
+            if isinstance(v, RealConstant):
+                val -= v.val
+            else:
+                val -= v.shift
+                new_vars.append(
+                    GaussianVariable(
+                        var=v.var,
+                        scale=v.scale,
+                        shift=0.0,
+                    )
                 )
-            )
+
+        if not new_vars:
+            return self.bdd.true if abs(val) < 1e-9 else self.bdd.false
 
         node_name = self._get_symbolic_observe_eq_node_name(new_vars, val)
         self.bdd.declare(node_name)
@@ -146,9 +156,13 @@ class KCState(RandomVariableCounter):
         equality_nodes = []
         for v in symbolic_value.values:
             # get the observe clause for this value
-            clause, equality_node = self.get_gaussian_variable_equality_expression(
-                v.var, v.scale, v.shift, val
-            )
+            if isinstance(v, RealConstant):
+                clause = self.bdd.true if v.val == val else self.bdd.false
+                equality_node = None
+            else:
+                clause, equality_node = self.get_gaussian_variable_equality_expression(
+                    v.var, v.scale, v.shift, val
+                )
             unguarded_clauses.append(clause)
             equality_nodes.append(equality_node)
 
@@ -170,10 +184,22 @@ class KCState(RandomVariableCounter):
     ):
         unguarded_clauses = []
         for v in symbolic_value.values:
-            # get the observe clause for this value
-            clause = self.get_gaussian_variable_inequality_expression(
-                v.var, v.scale, v.shift, inequality, val
-            )
+            if isinstance(v, RealConstant):
+                if inequality == "<":
+                    clause = self.bdd.true if v.val < val else self.bdd.false
+                elif inequality == "<=":
+                    clause = self.bdd.true if v.val <= val else self.bdd.false
+                elif inequality == ">":
+                    clause = self.bdd.true if v.val > val else self.bdd.false
+                elif inequality == ">=":
+                    clause = self.bdd.true if v.val >= val else self.bdd.false
+                else:
+                    raise ValueError(f"Unknown inequality {inequality}")
+            else:
+                # get the observe clause for this value
+                clause = self.get_gaussian_variable_inequality_expression(
+                    v.var, v.scale, v.shift, inequality, val
+                )
             unguarded_clauses.append(clause)
 
         return reduce(
