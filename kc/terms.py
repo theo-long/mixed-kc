@@ -11,10 +11,10 @@ from kc.real_values import (
     merge_real_values,
     merge_real_values_ignore_cond,
 )
-from kc.types import InequalityLiteral, WeightType
+from kc.types import InequalityLiteral
 
 if TYPE_CHECKING:
-    from kc.state import KCState, TruncationState
+    from kc.state import KCState
 
 
 @dataclass
@@ -27,7 +27,7 @@ class Const(AExpr):
         else:
             return state.bdd.false
 
-    def collect_real_truncation(self, env, state):
+    def preprocess(self, env, state):
         return
 
 
@@ -38,10 +38,10 @@ class Var(AExpr):
     def kc(self, env, state):
         return env[self.var]
 
-    def collect_real_truncation(self, env, state: "TruncationState"):
+    def preprocess(self, env, state):
         substitued_value = env[self.var]
         if substitued_value is not None:
-            substitued_value = substitued_value.collect_real_truncation(env, state)
+            substitued_value = substitued_value.preprocess(env, state)
         return substitued_value
 
 
@@ -58,12 +58,12 @@ class Flip(PExpr):
             prob_val = self.prob.kc(env, state)
         state.set_weight(
             f"flip_{flip_id}",
-            WeightType.from_likelihood(prob_val, state.gaussian_count),
-            WeightType.from_likelihood(1.0 - prob_val, state.gaussian_count),
+            prob_val,
+            1.0 - prob_val,
         )
         return state.bdd.var(f"flip_{flip_id}")
 
-    def collect_real_truncation(self, env, state: "TruncationState"):
+    def preprocess(self, env, state):
         return
 
 
@@ -83,10 +83,10 @@ class IfThenElse(PExpr):
         else:
             return (condition_bdd & then_result) | (~condition_bdd & else_result)
 
-    def collect_real_truncation(self, env, state: "TruncationState"):
-        self.cond.collect_real_truncation(env, state)
-        then_result = self.then_expr.collect_real_truncation(env, state)
-        else_result = self.else_expr.collect_real_truncation(env, state)
+    def preprocess(self, env, state):
+        self.cond.preprocess(env, state)
+        then_result = self.then_expr.preprocess(env, state)
+        else_result = self.else_expr.preprocess(env, state)
         if isinstance(then_result, RealValue):
             return merge_real_values_ignore_cond(then_result, else_result)
         else:
@@ -109,11 +109,9 @@ class Let(PExpr):
         new_env = extend_env(env, {self.var: self.binding.kc(env, state)})
         return self.body.kc(new_env, state)
 
-    def collect_real_truncation(self, env, state: "TruncationState"):
-        new_env = extend_env(
-            env, {self.var: self.binding.collect_real_truncation(env, state)}
-        )
-        return self.body.collect_real_truncation(new_env, state)
+    def preprocess(self, env, state):
+        new_env = extend_env(env, {self.var: self.binding.preprocess(env, state)})
+        return self.body.preprocess(new_env, state)
 
 
 class Rejection(Exception):
@@ -180,10 +178,8 @@ class Observe(PExpr):
         state._observes_all_hold = state._observes_all_hold & self.cond.kc(env, state)
         return state.bdd.true
 
-    def collect_real_truncation(
-        self, env: dict[str, PExpr], state: "TruncationState"
-    ) -> Any:
-        return self.cond.collect_real_truncation(env, state)
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
+        return self.cond.preprocess(env, state)
 
 
 def nonsymbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"):
@@ -232,8 +228,18 @@ class ObserveReal(PExpr):
             symbolic_observe_real(symbolic_value, self.val, state)
         return state.bdd.true
 
-    def collect_real_truncation(self, env, state):
-        self.symbolic_value.collect_real_truncation(env, state)
+    def preprocess(self, env, state):
+        symbolic_value = self.symbolic_value.preprocess(env, state)
+        if isinstance(symbolic_value, GaussianSum):
+            state.interaction_counter.add_observation(symbolic_value)
+            state.obs_counter.add_observation(symbolic_value)
+        elif isinstance(symbolic_value, Union):
+            for val in symbolic_value.values:
+                if isinstance(val, GaussianSum):
+                    state.interaction_counter.add_observation(val)
+                    state.obs_counter.add_observation(val)
+        else:
+            raise ValueError(f"Unexpected type: {type(symbolic_value)}")
         return
 
 
@@ -266,10 +272,10 @@ class Inequality(PExpr):
             raise TypeError(f"Unexpected type: {type(symbolic_value)}")
         return clause
 
-    def collect_real_truncation(self, env, state):
-        symbolic_value = self.symbolic_value.collect_real_truncation(env, state)
+    def preprocess(self, env, state):
+        symbolic_value = self.symbolic_value.preprocess(env, state)
         if isinstance(symbolic_value, TruncatableGaussianVariable):
-            state.add_truncation(
+            state.truncation_counter.add_truncation(
                 symbolic_value.var, symbolic_value.scale, symbolic_value.shift, self.val
             )
         elif isinstance(symbolic_value, Union):
@@ -279,7 +285,9 @@ class Inequality(PExpr):
             ):
                 raise ValueError("Can only truncate TruncatableGaussian")
             for gv in symbolic_value.values:
-                state.add_truncation(gv.var, gv.scale, gv.shift, self.val)
+                state.truncation_counter.add_truncation(
+                    gv.var, gv.scale, gv.shift, self.val
+                )
         else:
             raise TypeError(
                 f"Unexpected type for symbolic_value: {type(symbolic_value)}"

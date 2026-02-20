@@ -4,16 +4,13 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from typing import Any, Self, TypeVar
 
 import sympy
 from scipy.stats import beta, norm
 
 from kc.base import AExpr, PExpr
 from kc.config import settings
-
-if TYPE_CHECKING:
-    from kc.state import TruncationState
 
 
 class DistributionWithDensity:
@@ -50,9 +47,7 @@ class Beta(AExpr, DistributionWithMoments, DistributionWithDensity):
     def pdf(self, val):
         return beta.pdf(val, a=self.alpha, b=self.beta).item()
 
-    def collect_real_truncation(
-        self, env: dict[str, PExpr], state: "TruncationState"
-    ) -> Any:
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
         return
 
     def kc(self, env, state):
@@ -75,10 +70,8 @@ class Gaussian(AExpr, DistributionWithDensity):
             frozenset([GaussianVariable(var, scale=self.std, shift=self.mean)])
         )
 
-    def collect_real_truncation(
-        self, env: dict[str, PExpr], state: "TruncationState"
-    ) -> Any:
-        var = state.next_variable(self)
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
+        var = state.rv_counter.next_variable(self)
         return GaussianSum(
             frozenset([GaussianVariable(var, scale=self.std, shift=self.mean)])
         )
@@ -100,10 +93,8 @@ class TruncatableGaussian(AExpr, DistributionWithDensity):
         state.add_bdd_nodes_for_gaussian_variable(var, scale=self.std, shift=self.mean)
         return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
 
-    def collect_real_truncation(
-        self, env: dict[str, PExpr], state: "TruncationState"
-    ) -> Any:
-        var = state.next_variable(self)
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
+        var = state.rv_counter.next_variable(self)
         return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
 
     def pdf(self, val):
@@ -138,7 +129,7 @@ class GaussianVariable(RealVariable, AffineTransformable):
     scale: float = 1.0
     shift: float = 0.0
 
-    def collect_real_truncation(self, env, state: "TruncationState"):
+    def preprocess(self, env, state):
         return self
 
     def apply_affine(self, scale: float, shift: float):
@@ -182,7 +173,7 @@ class TruncatableGaussianVariable(GaussianVariable, Truncatable):
 class BetaVariable(RealVariable):
     var: int
 
-    def collect_real_truncation(self, env, state: "TruncationState"):
+    def preprocess(self, env, state):
         return self
 
 
@@ -194,7 +185,7 @@ class Union[T](RealValue, AffineTransformable):
     formulae: tuple[Any]
     values: tuple[T]
 
-    def collect_real_truncation(self, env, state: "TruncationState"):
+    def preprocess(self, env, state):
         return self
 
     def apply_affine(self, scale: float, shift: float):
@@ -228,7 +219,7 @@ class GaussianSum(RealVariable, AffineTransformable):
                 raise TypeError("rv must be GaussianVariable or Union")
         return GaussianSum(frozenset(new_rvs))
 
-    def collect_real_truncation(self, env, state: "TruncationState"):
+    def preprocess(self, env, state):
         return self
 
     def __add__(self, other: "GaussianSum") -> "GaussianSum":
@@ -307,9 +298,9 @@ class Sum(PExpr):
 
         return Union(tuple(formulae), tuple(sums))
 
-    def collect_real_truncation(self, env, state):
-        left = self.left.collect_real_truncation(env, state)
-        right = self.right.collect_real_truncation(env, state)
+    def preprocess(self, env, state):
+        left = self.left.preprocess(env, state)
+        right = self.right.preprocess(env, state)
 
         if not settings.union_of_sums:
             # Reduce to case of sum of sums
@@ -357,10 +348,8 @@ class Affine(PExpr):
         else:
             raise TypeError("body should evaluate to a Gaussian Variable or Union")
 
-    def collect_real_truncation(
-        self, env: dict[str, PExpr], state: "TruncationState"
-    ) -> Any:
-        body = self.body.collect_real_truncation(env, state)
+    def preprocess(self, env: dict[str, PExpr], state) -> Any:
+        body = self.body.preprocess(env, state)
         if isinstance(body, AffineTransformable):
             return body.apply_affine(self.scale, self.shift)
         else:

@@ -7,6 +7,7 @@ from functools import reduce
 import dd.autoref as _bdd
 import numpy as np
 import sympy
+from scipy.cluster.hierarchy import DisjointSet
 
 from kc.config import settings
 from kc.real_values import (
@@ -44,7 +45,7 @@ class RandomVariableCounter:
         return count
 
 
-class TruncationState(RandomVariableCounter):
+class TruncationCounter:
     def __init__(self):
         self.truncations: dict[int, set[float]] = defaultdict(set)
         super().__init__()
@@ -56,17 +57,61 @@ class TruncationState(RandomVariableCounter):
         return self.truncations.get(var, set())
 
 
+# Used so that we can treat disjoint subsets independently in inference
+class LatentInteractionCounter:
+    """Union-Find data structure which identifies disjoint subsets of interacting continuous latent variables."""
+
+    def __init__(self):
+        self.disjoint_sets = DisjointSet()
+
+    def add_observation(self, symbolic_value: GaussianSum):
+        prev: int | None = None
+        for rv in symbolic_value.rvs:
+            if isinstance(rv, Zero):
+                continue
+            self.disjoint_sets.add(rv.var)
+            if prev:
+                self.disjoint_sets.merge(rv.var, prev)
+                prev = rv.var
+
+
+# Used to determine the trie prefix ordering
+class ObservationFrequencyCounter:
+    """Count the number of sample paths along which a particular Gaussian observation occurs."""
+
+    def __init__(self):
+        # TODO
+        pass
+
+    def add_observation(self, symbolic_value: GaussianSum):
+        pass
+
+
+class PreprocessState:
+    def __init__(self) -> None:
+        self.truncation_counter = TruncationCounter()
+        self.rv_counter = RandomVariableCounter()
+        self.obs_counter = ObservationFrequencyCounter()
+        self.interaction_counter = LatentInteractionCounter()
+
+
 class KCState(RandomVariableCounter):
-    def __init__(self, truncation_state: TruncationState):
+    def __init__(self, preprocess_state: PreprocessState):
         self.bdd = _bdd.BDD()
         self.flips = 0
         self.flip_params = 0
-        self.weights: dict[int, tuple[WeightType, WeightType]] = {}
+        self.weights: dict[
+            int,
+            tuple[
+                WeightType,
+                WeightType,
+            ],
+        ] = {}
         self.priors: dict[sympy.Symbol, DistributionWithMoments] = {}
         self._observes_all_hold = self.bdd.true
-        self.truncations = truncation_state.truncations
+        self.truncations = preprocess_state.truncation_counter.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
-        self.gaussian_count = truncation_state.variable_count(Gaussian)
+        self.gaussian_count = preprocess_state.rv_counter.variable_count(Gaussian)
         super().__init__()
 
     def get_gaussian_union_symbolic_observe_expression(
@@ -95,10 +140,10 @@ class KCState(RandomVariableCounter):
         val: float,
     ):
         """Create a numpy array representing observation v^T x = val"""
-        v = np.zeros((1, self.gaussian_count + 1))
+        v = np.zeros(self.gaussian_count + 1)
         for var in vars:
-            v[0, var.var] = var.scale
-        v[0, 0] = val
+            v[var.var] = var.scale
+        v[0] = val
         return v
 
     def get_gaussian_sum_symbolic_observe_expression(
@@ -125,15 +170,8 @@ class KCState(RandomVariableCounter):
         self.bdd.declare(node_name)
         self.set_weight(
             node_name,
-            WeightType(
-                [
-                    (
-                        1.0,
-                        self.create_observation_vector(new_vars, val),
-                    )
-                ]
-            ),
-            WeightType.from_likelihood(1.0, self.gaussian_count),
+            self.create_observation_vector(new_vars, val),
+            1.0,
         )
         return self.bdd.var(node_name)
 
@@ -210,8 +248,8 @@ class KCState(RandomVariableCounter):
             weight /= scale
         self.set_weight(
             equality_node_name,
-            WeightType.from_likelihood(weight, self.gaussian_count),
-            WeightType.from_likelihood(1.0, self.gaussian_count),
+            weight,
+            1.0,
         )
         self.bdd_equality_nodes[var].add(equality_node_name)
         return self.bdd.var(equality_node_name)
@@ -243,8 +281,8 @@ class KCState(RandomVariableCounter):
 
             self.set_weight(
                 interval_node_name,
-                WeightType.from_likelihood(flip_prob, self.gaussian_count),
-                WeightType.from_likelihood(1.0 - flip_prob, self.gaussian_count),
+                flip_prob,
+                1.0 - flip_prob,
             )
 
         return sorted_thresholds
