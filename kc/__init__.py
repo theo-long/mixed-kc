@@ -18,6 +18,8 @@ from .terms import (
     Var,
 )
 
+from . import dsl
+
 __all__ = [
     "settings",
     "run_kc",
@@ -34,4 +36,5 @@ __all__ = [
     "TruncatableGaussian",
     "Gaussian",
     "Sum",
+    "dsl",
 ]

@@ -18,7 +18,7 @@ def _model_count(
     weights: Mapping[int, tuple[WeightType, WeightType]],
 ):
     if u in count:
-        return count[u]
+        return deepcopy(count[u])
     if u.low is None or u.high is None:
         raise ValueError("Found none type for bdd node child")
     if is_negated(u):
@@ -26,11 +26,12 @@ def _model_count(
     else:
         low, high = (u.low, u.high)
 
-    left_count = deepcopy(_model_count(bdd, low, count, weights))
-    right_count = deepcopy(_model_count(bdd, high, count, weights))
+    left_count = _model_count(bdd, low, count, weights)
+    right_count = _model_count(bdd, high, count, weights)
     (wpos, wneg) = weights[u.var]
-    count[u] = right_count * wpos + left_count * wneg
-    return count[u]
+    res = right_count * wpos + left_count * wneg
+    count[u] = res
+    return deepcopy(res)
 
 
 def model_count(

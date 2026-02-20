@@ -88,6 +88,13 @@ class IncrementalSystem:
                 final_result = result
         return final_result
 
+    def copy(self):
+        new_sys = IncrementalSystem(self.n, self.tol)
+        new_sys.Q = self.Q.copy()
+        new_sys.R = self.R.copy()
+        new_sys.b = self.b.copy()
+        return new_sys
+
     @property
     def A(self):
         return (self.Q @ self.R).T
@@ -204,7 +211,7 @@ class ObservationNode:
         for i in range(len(self.children)):
             child = self.children[i]
             if isinstance(child, ObservationNode):
-                child = child._collect_qr_update_recursive(deepcopy(qr))
+                child = child._collect_qr_update_recursive(qr.copy())
             if child:
                 new_children.append(child)
 
@@ -228,7 +235,11 @@ class ObservationNode:
             for child in self.children:
                 child *= other
                 if child:
-                    new_children.append(deepcopy(child))
+                    new_children.append(
+                        child.copy()
+                        if hasattr(child, "copy")
+                        else LikelihoodNode(child.likelihood)
+                    )
             self.children = new_children
             return self
 
@@ -240,10 +251,14 @@ class ObservationNode:
         for i in range(len(self.children)):
             child = self.children[i]
             if isinstance(child, ObservationNode):
-                child = child._collect_qr_update_recursive(deepcopy(self.observations))
+                child = child._collect_qr_update_recursive(self.observations.copy())
             if isinstance(child, LikelihoodNode) and child.likelihood == 0:
                 continue
-            new_children.append(deepcopy(child))
+            new_children.append(
+                child.copy()
+                if hasattr(child, "copy")
+                else LikelihoodNode(child.likelihood)
+            )
 
         self.children = new_children
         # If there is a single observation node child, collapse them together
@@ -255,6 +270,14 @@ class ObservationNode:
         if self.children:
             return self
         return LikelihoodNode(0.0)
+
+    def copy(self):
+        new_node = ObservationNode(self.observations.copy())
+        new_node.children = [
+            c.copy() if hasattr(c, "copy") else LikelihoodNode(c.likelihood)
+            for c in self.children
+        ]
+        return new_node
 
     def __rmul__(self, other: WeightType) -> "ObservationNode | LikelihoodNode":
         return self.__mul__(other)

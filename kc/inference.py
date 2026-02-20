@@ -7,8 +7,8 @@ from kc.gaussian_math import get_expr_distribution
 from kc.model_count import model_count
 from kc.real_values import GaussianSum, GaussianVariable, Zero
 from kc.state import KCState, PreprocessState
-from kc.types import get_float_value
 from kc.terms import EnumResult
+from kc.types import get_float_value
 
 
 def run_kc(expr: PExpr):
@@ -58,7 +58,7 @@ def run_kc(expr: PExpr):
         return (unnormalized_prob / normalizing_constant, normalizing_constant)
     elif isinstance(val, GaussianSum):
         normalized_posterior = []
-        for weight, (mu, cov) in posterior_mixture:
+        for weight, mu, cov in posterior_mixture:
             v = np.zeros((1, state.gaussian_count))
             b = 0.0
             for var in val.rvs:
@@ -96,5 +96,36 @@ def run_kc(expr: PExpr):
             unnormalized_prob = get_float_value(unnormalized_prob, state.priors)
             probs[enum_str] = unnormalized_prob / normalizing_constant
         return probs, normalizing_constant
+    elif type(val).__name__ == "Union":
+        normalized_posterior = []
+        for formula, v in zip(val.formulae, val.values):
+            posterior_mixture_with_formula = model_count(
+                state.bdd,
+                formula & state.observes_all_hold,
+                state.weights,
+            )
+            for weight, mu, cov in posterior_mixture_with_formula:
+                v_vec = np.zeros((1, state.gaussian_count))
+                b_val = 0.0
+                if isinstance(v, GaussianSum):
+                    for var in v.rvs:
+                        if not isinstance(var, Zero):
+                            v_vec[0, var.var - 1] = var.scale
+                            b_val += var.shift
+                elif isinstance(v, Zero):
+                    pass
+                elif hasattr(v, "value"):  # RealConstant
+                    b_val += v.value
+                else:  # Fallback assuming RealVariable / GaussianVariable
+                    if not isinstance(v, Zero) and hasattr(v, "var"):
+                        v_vec[0, v.var - 1] = v.scale
+                        b_val += v.shift
+                expr_mu, expr_cov = get_expr_distribution(mu, cov, v_vec, b_val)
+                normalized_posterior.append(
+                    (weight / normalizing_constant, (expr_mu, expr_cov))
+                )
+        return normalized_posterior, normalizing_constant
     else:
+        if type(val).__name__ == "Union":
+            print(f"DEBUG Union: formulae={val.formulae}, values={val.values}")
         raise TypeError(f"Cannot perform inference for value of type {type(val)}")
