@@ -13,8 +13,9 @@ def model(measurements):
             # First we sample the true height in metres from a bimodal distribution
             short_height = dsl.gaussian(1.6, 0.3, name="short_height")
             tall_height = dsl.gaussian(1.8, 0.3, name="tall_height")
+            is_short = dsl.flip(p_short, f"is_short_{i}")
             height_in_m = dsl.ifthenelse(
-                dsl.flip(p_short), short_height, tall_height, name=f"true_height_{i}"
+                is_short, short_height, tall_height, name=f"true_height_{i}"
             )
 
             # We then randomly sample a unit
@@ -56,19 +57,20 @@ def model(measurements):
 
 if __name__ == "__main__":
     # Feet, feet, cm, inches, cm, m
-    data = [6.0, 6.1, 180, 73, 110, 1.1]
+    data = [6.0 , 6.1, 180, 73] #, 110, 1.1]
 
-    print("Compiling model for data:", data)
     m = model(data)
     for i in range(len(data)):
-        ir = m.compile(f"true_height_{i}")
-        result = run_kc(ir)
-        print(f"Estimated height in m posterior: {result}")
+        print(f"---- Measurement : {data[i]:<4} -------")
+
+        ir = m.compile(f"is_short_{i}")
+        result, Z = run_kc(ir)
+        print(f"Estimated p is_short: {result}")
 
         ir = m.compile(f"is_imperial_{i}")
-        result = run_kc(ir)
-        print(f"Estimated is_imperial posterior: {result}")
+        result, Z = run_kc(ir)
+        print(f"Estimated p is_imperial posterior: {result}")
 
         ir = m.compile(f"is_small_unit_{i}")
-        result = run_kc(ir)
-        print(f"Estimated is_small_unit posterior: {result}")
+        result, Z = run_kc(ir)
+        print(f"Estimated p is_small_unit posterior: {result}")

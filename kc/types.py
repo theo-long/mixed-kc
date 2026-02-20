@@ -21,6 +21,16 @@ inequality_flip_mapping: dict[InequalityLiteral, InequalityLiteral] = {
 }
 
 
+def get_degree(v: LikelihoodType):
+    if isinstance(v, (int, float)):
+        return 0
+
+    v_poly = v.as_poly(epsilon)
+    assert v_poly is not None, "Should get a polynomial"
+    v_poly.simplify()
+    return sympy.degree(v_poly, epsilon)
+
+
 def get_float_value(
     v: LikelihoodType, priors: dict[sympy.Symbol, "DistributionWithMoments"]
 ) -> float:
