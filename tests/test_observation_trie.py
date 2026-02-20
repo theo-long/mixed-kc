@@ -85,6 +85,7 @@ def test_observation_node_structure():
     child2 = ObservationNode(IncrementalSystem(n_features), children=[LikelihoodNode(2)])
 
     # __add__ creates a NEW parent
+    # TODO - add should eliminate the top-level nodes entirely
     parent = child1 + child2
     assert len(parent.children) == 2
     assert parent.children[0].likelihood == 1
