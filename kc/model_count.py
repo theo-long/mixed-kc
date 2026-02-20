@@ -41,6 +41,18 @@ def get_posterior(observation_trie: ObservationNode):
 
 
 @profile
+def get_obs_trie(
+    bdd: _bdd.BDD,
+    u: _bdd.Function,
+    weights: Mapping[int, tuple[WeightType, WeightType]],
+):
+    count: dict[_bdd._Ref, ObservationNode] = dict()
+    count[bdd.true] = LikelihoodNode(1.0)
+    count[bdd.false] = LikelihoodNode(0.0)
+    observation_trie = _model_count(bdd, u, count, weights)
+    return observation_trie
+
+
 def model_count(
     bdd: _bdd.BDD,
     u: _bdd.Function,
@@ -49,8 +61,5 @@ def model_count(
         tuple[WeightType, WeightType],
     ],
 ):
-    count: dict[_bdd._Ref, ObservationNode] = dict()
-    count[bdd.true] = LikelihoodNode(1.0)
-    count[bdd.false] = LikelihoodNode(0.0)
-    observation_trie = _model_count(bdd, u, count, weights)
+    observation_trie = get_obs_trie(bdd, u, weights)
     return get_posterior(observation_trie)
