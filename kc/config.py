@@ -26,6 +26,7 @@ class Config(BaseSettings):
     )
     debug: bool = False
     transform_measures: bool = True
+    profiling: bool = False
 
 
 settings = Config()

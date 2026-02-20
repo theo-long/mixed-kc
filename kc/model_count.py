@@ -4,6 +4,7 @@ from typing import Mapping
 import dd.autoref as _bdd
 
 from kc.observation_trie import LikelihoodNode, ObservationNode
+from kc.profiling import profile
 from kc.types import WeightType
 
 
@@ -34,6 +35,12 @@ def _model_count(
     return deepcopy(res)
 
 
+@profile
+def get_posterior(observation_trie: ObservationNode):
+    return observation_trie.compute_posterior()
+
+
+@profile
 def model_count(
     bdd: _bdd.BDD,
     u: _bdd.Function,
@@ -46,4 +53,4 @@ def model_count(
     count[bdd.true] = LikelihoodNode(1.0)
     count[bdd.false] = LikelihoodNode(0.0)
     observation_trie = _model_count(bdd, u, count, weights)
-    return observation_trie.compute_posterior()
+    return get_posterior(observation_trie)
