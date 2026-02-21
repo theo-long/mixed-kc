@@ -25,9 +25,8 @@ def get_degree(v: LikelihoodType):
     if isinstance(v, (int, float)):
         return 0
 
-    v_poly = v.as_poly(epsilon)
+    v_poly = sympy.expand(v).as_poly(epsilon)
     assert v_poly is not None, "Should get a polynomial"
-    v_poly.simplify()
     return sympy.degree(v_poly, epsilon)
 
 
@@ -37,11 +36,10 @@ def get_float_value(
     if isinstance(v, (int, float)):
         return float(v)
 
-    v_poly = v.as_poly(epsilon)
+    v_poly = sympy.expand(v).as_poly(epsilon)
     assert v_poly is not None, "Should get a polynomial"
-    v_poly.simplify()
 
-    coeff = v_poly.coeffs()[-1].simplify()
+    coeff = v_poly.coeffs()[-1]
     for symbol, prior in priors.items():
         max_degree = sympy.degree(coeff, symbol)
         coeff = coeff.xreplace(
