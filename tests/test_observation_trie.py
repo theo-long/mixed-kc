@@ -117,14 +117,16 @@ def test_observation_node_pruning():
     n_features = 2
     # Two branches:
     # Branch 1 expects x0 = 5
-    branch1 = ObservationNode(IncrementalSystem(n_features))
+    branch1 = ObservationNode(
+        IncrementalSystem(n_features), children=[LikelihoodNode(1.0)]
+    )
     branch1.observations.process_equation([1, 0], 5)
-    branch1.children.append(LikelihoodNode(1.0))
 
     # Branch 2 expects x0 = 6
-    branch2 = ObservationNode(IncrementalSystem(n_features))
+    branch2 = ObservationNode(
+        IncrementalSystem(n_features), children=[LikelihoodNode(1.0)]
+    )
     branch2.observations.process_equation([1, 0], 6)
-    branch2.children.append(LikelihoodNode(1.0))
 
     # Combine them
     root = branch1 + branch2

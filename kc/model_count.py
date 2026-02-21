@@ -1,4 +1,3 @@
-from copy import deepcopy
 from typing import Mapping
 
 import dd.autoref as _bdd
@@ -19,7 +18,7 @@ def _model_count(
     weights: Mapping[int, tuple[WeightType, WeightType]],
 ):
     if u in count:
-        return deepcopy(count[u])
+        return count[u]
     if u.low is None or u.high is None:
         raise ValueError("Found none type for bdd node child")
     if is_negated(u):
@@ -32,7 +31,7 @@ def _model_count(
     (wpos, wneg) = weights[u.var]
     res = right_count * wpos + left_count * wneg
     count[u] = res
-    return deepcopy(res)
+    return res
 
 
 @profile

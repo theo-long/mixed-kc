@@ -211,18 +211,19 @@ class ObservationNode:
             child = self.children[i]
             if isinstance(child, ObservationNode):
                 child = child._collect_qr_update_recursive(qr.copy())
+            if isinstance(child, LikelihoodNode) and child.likelihood == 0:
+                continue
             if child:
                 new_children.append(child)
 
-        self.children = new_children
         # If there is a single observation node child, collapse them together
-        if len(self.children) == 1 and not isinstance(self.children[0], LikelihoodNode):
-            merged_node = self.children[0]
+        if len(new_children) == 1 and not isinstance(new_children[0], LikelihoodNode):
+            merged_node = new_children[0].copy()
             merged_node.observations.merge(self.observations)
             return merged_node
 
-        if self.children:
-            return self
+        if new_children:
+            return ObservationNode(self.observations, children=new_children)
 
         return LikelihoodNode(0.0)
 
@@ -232,17 +233,15 @@ class ObservationNode:
                 return LikelihoodNode(0.0)
             new_children = []
             for child in self.children:
-                child *= other
+                child = child * other
+                if isinstance(child, LikelihoodNode) and child.likelihood == 0:
+                    continue
                 if child:
-                    new_children.append(
-                        child.copy()
-                        if hasattr(child, "copy")
-                        else LikelihoodNode(child.likelihood)
-                    )
-            self.children = new_children
-            return self
+                    new_children.append(child)
+            return ObservationNode(self.observations, children=new_children)
 
-        result = self.observations.process_equation(other[1:], other[0])
+        new_obs = self.observations.copy()
+        result = new_obs.process_equation(other[1:], other[0])
         if result == UpdateResult.INCOMPATIBLE:
             return LikelihoodNode(0.0)
 
@@ -250,24 +249,20 @@ class ObservationNode:
         for i in range(len(self.children)):
             child = self.children[i]
             if isinstance(child, ObservationNode):
-                child = child._collect_qr_update_recursive(self.observations.copy())
+                child = child._collect_qr_update_recursive(new_obs.copy())
             if isinstance(child, LikelihoodNode) and child.likelihood == 0:
                 continue
-            new_children.append(
-                child.copy()
-                if hasattr(child, "copy")
-                else LikelihoodNode(child.likelihood)
-            )
+            if child:
+                new_children.append(child)
 
-        self.children = new_children
         # If there is a single observation node child, collapse them together
-        if len(self.children) == 1 and not isinstance(self.children[0], LikelihoodNode):
-            merged_node = self.children[0]
-            merged_node.observations.merge(self.observations)
+        if len(new_children) == 1 and not isinstance(new_children[0], LikelihoodNode):
+            merged_node = new_children[0].copy()
+            merged_node.observations.merge(new_obs)
             return merged_node
 
-        if self.children:
-            return self
+        if new_children:
+            return ObservationNode(new_obs, children=new_children)
         return LikelihoodNode(0.0)
 
     def copy(self):
