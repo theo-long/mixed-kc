@@ -6,7 +6,7 @@ from kc.config import settings
 from kc.gaussian_math import get_expr_distribution
 from kc.model_count import model_count
 from kc.profiling import profile
-from kc.real_values import GaussianSum, GaussianVariable, Zero
+from kc.real_values import GaussianSum, GaussianVariable, RealConstant
 from kc.state import KCState, PreprocessState
 from kc.terms import EnumResult
 from kc.types import get_degree, get_float_value
@@ -81,7 +81,7 @@ def gaussian_inference(val, state, normalizing_constant, posterior_mixture):
         v = np.zeros((1, state.gaussian_count))
         b = 0.0
         for var in val.rvs:
-            assert not isinstance(var, Zero)
+            assert not isinstance(var, RealConstant)
             v[0, var.var - 1] = var.scale
             b += var.shift
         expr_mu, expr_cov = get_expr_distribution(mu, cov, v, b)

@@ -114,12 +114,21 @@ class RealVariable(RealValue):
 
 class AffineTransformable(ABC):
     @abstractmethod
-    def apply_affine(self, scale: float, shift: float) -> Self | "Zero":
+    def apply_affine(self, scale: float, shift: float) -> Self | "RealConstant":
         raise NotImplementedError()
 
 
-class Zero(RealVariable, AffineTransformable):
+@dataclass(eq=True, frozen=True)
+class RealConstant(RealVariable, AffineTransformable, AExpr):
+    value: float
+
     def apply_affine(self, scale: float, shift: float):
+        return RealConstant(self.value * scale + shift)
+
+    def preprocess(self, env, state):
+        return self
+
+    def kc(self, env, state):
         return self
 
 
@@ -134,7 +143,7 @@ class GaussianVariable(RealVariable, AffineTransformable):
 
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
-            return Zero()
+            return RealConstant(0.0)
         new_scale = self.scale * scale
         new_shift = self.shift * scale + shift
         return GaussianVariable(self.var, new_scale, new_shift)
@@ -160,7 +169,7 @@ class Truncatable:
 class TruncatableGaussianVariable(GaussianVariable, Truncatable):
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
-            return Zero()
+            return RealConstant(0.0)
         new_scale = self.scale * scale
         new_shift = self.shift * scale + shift
         return TruncatableGaussianVariable(self.var, new_scale, new_shift)
@@ -190,7 +199,7 @@ class Union[T](RealValue, AffineTransformable):
 
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
-            return Zero()
+            return RealConstant(0.0)
         assert all(isinstance(var, AffineTransformable) for var in self.values), (
             "All values must be AffineTransformable"
         )
@@ -206,11 +215,11 @@ class Union[T](RealValue, AffineTransformable):
 class GaussianSum(RealVariable, AffineTransformable):
     """Sum of n Gaussian variables after evaluation"""
 
-    rvs: frozenset[GaussianVariable | Zero]
+    rvs: frozenset[GaussianVariable | RealConstant]
 
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
-            return Zero()
+            return RealConstant(0.0)
         new_rvs = []
         for rv in self.rvs:
             if isinstance(rv, (GaussianVariable, Union)):
@@ -230,6 +239,7 @@ class GaussianSum(RealVariable, AffineTransformable):
         # Combine Unions which are identical by counting occurrences
         new_vars: dict[int, GaussianVariable] = {}
         new_unions: dict[Union, int] = defaultdict(int)
+        constant_val = 0.0
         for rv in itertools.chain(self.rvs, other.rvs):
             if isinstance(rv, GaussianVariable):
                 if rv.var in new_vars:
@@ -240,13 +250,17 @@ class GaussianSum(RealVariable, AffineTransformable):
                     new_vars[rv.var] = rv
             elif isinstance(rv, Union):
                 new_unions[rv] += 1
+            elif isinstance(rv, RealConstant):
+                constant_val += rv.value
             else:
-                raise TypeError("rv must be GaussianVariable or Union")
+                raise TypeError("rv must be GaussianVariable, Union, or RealConstant")
         combined_unions = []
         for union, count in new_unions.items():
             for _ in range(count):
                 combined_unions.append(union.apply_affine(count, 0.0))
         new_rvs = list(new_vars.values()) + combined_unions
+        if constant_val != 0.0 or not new_rvs:
+            new_rvs.append(RealConstant(constant_val))
         return GaussianSum(frozenset(new_rvs))
 
 
@@ -280,6 +294,11 @@ class Sum(PExpr):
         for (lhs_formula, lhs_value), (rhs_formula, rhs_value) in itertools.product(
             zip(left.formulae, left.values), zip(right.formulae, right.values)
         ):
+            if not isinstance(lhs_value, GaussianSum):
+                lhs_value = GaussianSum(frozenset([lhs_value]))
+            if not isinstance(rhs_value, GaussianSum):
+                rhs_value = GaussianSum(frozenset([rhs_value]))
+
             assert isinstance(lhs_value, GaussianSum) and isinstance(
                 rhs_value, GaussianSum
             ), "Elements of Union must GaussianSum"
@@ -320,6 +339,11 @@ class Sum(PExpr):
         # For truncation we don't need to track formulae, just the sums
         sums = set()
         for lhs_value, rhs_value in itertools.product(left.values, right.values):
+            if not isinstance(lhs_value, GaussianSum):
+                lhs_value = GaussianSum(frozenset([lhs_value]))
+            if not isinstance(rhs_value, GaussianSum):
+                rhs_value = GaussianSum(frozenset([rhs_value]))
+
             assert isinstance(lhs_value, GaussianSum) and isinstance(
                 rhs_value, GaussianSum
             ), "Elements of Union must GaussianSum"
@@ -398,8 +422,8 @@ def merge_real_values(cond, t, f):
     # Now we can merge each corresponding term in the Gaussian sums
     sum_terms: dict[Union | GaussianVariable, int] = defaultdict(int)
     for t_val, f_val in itertools.zip_longest(t_vals, f_vals):
-        t_val = t_val if t_val is not None else Zero()
-        f_val = f_val if f_val is not None else Zero()
+        t_val = t_val if t_val is not None else RealConstant(0.0)
+        f_val = f_val if f_val is not None else RealConstant(0.0)
         merged_term = merge_real_values_reduced(cond, t_val, f_val)
         if not isinstance(merged_term, Union):
             raise TypeError(

@@ -16,8 +16,8 @@ from kc.real_values import (
     Gaussian,
     GaussianSum,
     GaussianVariable,
+    RealConstant,
     Union,
-    Zero,
 )
 from kc.types import (
     InequalityLiteral,
@@ -67,7 +67,7 @@ class LatentInteractionCounter:
     def add_observation(self, symbolic_value: GaussianSum):
         prev: int | None = None
         for rv in symbolic_value.rvs:
-            if isinstance(rv, Zero):
+            if isinstance(rv, RealConstant):
                 continue
             self.disjoint_sets.add(rv.var)
             if prev:
@@ -156,7 +156,9 @@ class KCState(RandomVariableCounter):
         # Move all shift terms into the value
         new_vars: list[GaussianVariable] = []
         for v in rvs:
-            assert not isinstance(v, Zero)
+            if isinstance(v, RealConstant):
+                val -= v.value
+                continue
             val -= v.shift
             new_vars.append(
                 GaussianVariable(
