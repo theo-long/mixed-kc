@@ -3,16 +3,94 @@ from enum import Enum
 
 import numpy as np
 
-from kc import dsl, run_kc
+from kc import dsl, run_kc, terms
+
+
+def exactly_one(booleans):
+    if not booleans:
+        return dsl.const(False)
+
+    def none_true(bools):
+        if not bools:
+            return dsl.const(True)
+        return dsl.ifthenelse(bools[0], dsl.const(False), none_true(bools[1:]))
+
+    return dsl.ifthenelse(
+        booleans[0], none_true(booleans[1:]), exactly_one(booleans[1:])
+    )
 
 
 def model(competitors, teams, observed) -> dsl.Model:
-    
     traits = {}
     with dsl.Model() as m:
+        trait_enum = terms.EnumType("trait", Traits._member_names_)
         for competitor in competitors:
-            #trait = dsl.categorical()
-            pass
+            traits[competitor] = dsl.categorical(
+                [terms.EnumValue(trait_enum, i) for i in range(len(Traits))],
+                probs=[0.25, 0.25, 0.25, 0.25],
+                name=f"trait_{competitor}",
+            )
+
+        team_strengths = []
+        for team in teams:
+            has_team_player = dsl.const(False)
+            only_one_flags = []
+            is_consistent_flags = []
+            is_super_strength_flags = []
+
+            for player in team:
+                trait = traits[player]
+                is_tp = terms.Equality(trait, trait_enum.TEAM_PLAYER)
+                has_team_player = dsl.ifthenelse(
+                    is_tp, dsl.const(True), has_team_player
+                )
+
+                only_one_flags.append(terms.Equality(trait, trait_enum.ONLY_ONE))
+                is_consistent_flags.append(terms.Equality(trait, trait_enum.CONSISTENT))
+                is_super_strength_flags.append(
+                    terms.Equality(trait, trait_enum.SUPER_STRENGTH)
+                )
+
+            is_exactly_one_only_one = exactly_one(only_one_flags)
+
+            mean_exprs = []
+            for i, player in enumerate(team):
+                mu_i = dsl.ifthenelse(
+                    is_super_strength_flags[i], dsl.const_real(1.0), dsl.const_real(0.0)
+                )
+                mu_i = mu_i + dsl.ifthenelse(
+                    has_team_player, dsl.const_real(0.2), dsl.const_real(0.0)
+                )
+
+                only_one_mod = dsl.ifthenelse(
+                    is_exactly_one_only_one, dsl.const_real(1.0), dsl.const_real(-0.5)
+                )
+                mu_i = mu_i + dsl.ifthenelse(
+                    only_one_flags[i], only_one_mod, dsl.const_real(0.0)
+                )
+                mean_exprs.append(mu_i)
+
+            team_strengths.append((mean_exprs, is_consistent_flags))
+
+        for i, matchup in enumerate(itertools.combinations(range(len(teams)), 2)):
+            obs_matchup = observed[i]
+            for t_idx, team_idx in enumerate(matchup):
+                mean_exprs, is_consistent_flags = team_strengths[team_idx]
+
+                score = None
+                for mu_expr, is_consistent in zip(
+                    mean_exprs, is_consistent_flags, strict=True
+                ):
+                    g = dsl.ifthenelse(
+                        is_consistent, dsl.gaussian(0.0, 0.5), dsl.gaussian(0.0, 1.0)
+                    )
+                    player_score = g + mu_expr
+                    if score is None:
+                        score = player_score
+                    else:
+                        score = score + player_score
+
+                dsl.observe(score, obs_matchup[t_idx])
 
     return m
 
@@ -91,9 +169,9 @@ if __name__ == "__main__":
         observed.append(matchup_score)
 
     m = model(competitors, teams, observed)
-    for competitor in enumerate(competitors):
+    for competitor in competitors:
         print(f"---- Competitor : {competitor} -------")
 
-        ir = m.compile(f"is_team_player_{competitor}")
+        ir = m.compile(f"trait_{competitor}")
         result, Z = run_kc(ir)
-        print(f"Estimated p is_team_player: {result}")
+        print(f"Estimated trait probabilities: {result}")

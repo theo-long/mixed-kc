@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from typing import Optional
 
 from kc.base import AExpr, PExpr
-from kc.real_values import Beta, Gaussian, TruncatableGaussian
+from kc.real_values import Beta, Gaussian, RealConstant, TruncatableGaussian
 from kc.terms import (
     Categorical,
     Const,
@@ -133,3 +133,8 @@ def inequality(
 def const(val: bool, name: str = None) -> Var:
     m = _get_active_model()
     return m.register(Const(val), name)
+
+
+def const_real(val: float, name: str = None) -> Var:
+    m = _get_active_model()
+    return m.register(RealConstant(val), name)
