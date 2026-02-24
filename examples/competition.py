@@ -5,7 +5,7 @@ import numpy as np
 
 from kc import dsl, run_kc, terms
 
-SUPER_STRENGTH_BOOST = 5.0
+SUPER_STRENGTH_BOOST = 2.0
 TEAM_PLAYER_BOOST = 0.2
 ONLY_ONE_BOOST = 1.0
 ONLY_ONE_PENALTY = -1.0
