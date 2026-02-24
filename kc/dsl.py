@@ -1,20 +1,20 @@
 import threading
 from collections.abc import Sequence
-from typing import Optional, Any
+from typing import Optional
 
-from kc.base import PExpr, AExpr
+from kc.base import AExpr, PExpr
+from kc.real_values import Beta, Gaussian, TruncatableGaussian
 from kc.terms import (
-    Let,
-    Var,
+    Categorical,
     Const,
     Flip,
     IfThenElse,
+    Inequality,
+    Let,
     Observe,
     ObserveReal,
-    Inequality,
-    Categorical,
+    Var,
 )
-from kc.real_values import Beta, Gaussian, TruncatableGaussian
 from kc.types import InequalityLiteral
 
 
