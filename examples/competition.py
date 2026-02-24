@@ -5,6 +5,12 @@ import numpy as np
 
 from kc import dsl, run_kc, terms
 
+SUPER_STRENGTH_BOOST = 5.0
+TEAM_PLAYER_BOOST = 0.2
+ONLY_ONE_BOOST = 1.0
+ONLY_ONE_PENALTY = -1.0
+CONSISTENT_VARIANCE = 0.1
+
 
 def exactly_one(booleans):
     if not booleans:
@@ -56,14 +62,20 @@ def model(competitors, teams, observed) -> dsl.Model:
             mean_exprs = []
             for i, player in enumerate(team):
                 mu_i = dsl.ifthenelse(
-                    is_super_strength_flags[i], dsl.const_real(1.0), dsl.const_real(0.0)
+                    is_super_strength_flags[i],
+                    dsl.const_real(SUPER_STRENGTH_BOOST),
+                    dsl.const_real(0.0),
                 )
                 mu_i = mu_i + dsl.ifthenelse(
-                    has_team_player, dsl.const_real(0.2), dsl.const_real(0.0)
+                    has_team_player,
+                    dsl.const_real(TEAM_PLAYER_BOOST),
+                    dsl.const_real(0.0),
                 )
 
                 only_one_mod = dsl.ifthenelse(
-                    is_exactly_one_only_one, dsl.const_real(1.0), dsl.const_real(-0.5)
+                    is_exactly_one_only_one,
+                    dsl.const_real(ONLY_ONE_BOOST),
+                    dsl.const_real(ONLY_ONE_PENALTY),
                 )
                 mu_i = mu_i + dsl.ifthenelse(
                     only_one_flags[i], only_one_mod, dsl.const_real(0.0)
@@ -82,7 +94,9 @@ def model(competitors, teams, observed) -> dsl.Model:
                     mean_exprs, is_consistent_flags, strict=True
                 ):
                     g = dsl.ifthenelse(
-                        is_consistent, dsl.gaussian(0.0, 0.5), dsl.gaussian(0.0, 1.0)
+                        is_consistent,
+                        dsl.gaussian(0.0, CONSISTENT_VARIANCE),
+                        dsl.gaussian(0.0, 1.0),
                     )
                     player_score = g + mu_expr
                     if score is None:
@@ -98,8 +112,8 @@ def model(competitors, teams, observed) -> dsl.Model:
 class Traits(Enum):
     TEAM_PLAYER = 1  # Boosts everyone else on the team
     SUPER_STRENGTH = 2  # Have a larger base strength
-    ONLY_ONE = 3  # If they are the only one with this Trait, high strength, otherwise low strength
-    CONSISTENT = 4  # Consistent strength unaffected by others
+    ONLY_ONE = 3  # If they are the only one with this Trait, higher strength, otherwise lower strength
+    CONSISTENT = 4  # Lowers variance of their strength
 
 
 def compute_strength(team, competitors):
@@ -116,21 +130,21 @@ def compute_strength(team, competitors):
             case Traits.ONLY_ONE:
                 only_one[i] = True
             case Traits.SUPER_STRENGTH:
-                mean[i] += 1
+                mean[i] += SUPER_STRENGTH_BOOST
             case Traits.CONSISTENT:
-                variance[i] = 0.5
+                variance[i] = CONSISTENT_VARIANCE
 
     if has_team_player:
         for i in range(len(mean)):
-            mean[i] += 0.2
+            mean[i] += TEAM_PLAYER_BOOST
 
     n_only_one = sum(only_one)
     for i in range(len(mean)):
         if only_one[i]:
             if n_only_one == 1:
-                mean[i] += 1
+                mean[i] += ONLY_ONE_BOOST
             else:
-                mean[i] -= 0.5
+                mean[i] += ONLY_ONE_PENALTY
 
     return mean, variance
 
@@ -174,4 +188,6 @@ if __name__ == "__main__":
 
         ir = m.compile(f"trait_{competitor}")
         result, Z = run_kc(ir)
-        print(f"Estimated trait probabilities: {result}")
+        print("True Trait : ", competitors[competitor])
+        for trait, prob in result.items():
+            print(f"- {trait:<15}: {prob: .4f}")
