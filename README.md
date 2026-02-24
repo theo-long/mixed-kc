@@ -248,3 +248,39 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 ## Things to look at
 - SPPL sum product networks
     - compare inequality implementation - is theirs somehow stronger/weaker/different?
+
+## Beta-Bernoulli
+- We represent beta-bernoulli posterior in terms of their sufficient statistics i.e. count of successful trials
+    - e.g. currently Ax = b rep for Gaussians, for BB we have finite map {beta names} -> (head_count, tail_count)
+    - similarly the *prior* of the beta is not tracked in these leaves, it is stored elsewhere
+- We have the possibility to observe beta, which in some sense 'collapses' the posterior rep (head_count, tail_count) and just fixes a p value
+    - interesting potential interactions when the observe is conditional 
+- In the case where we *don't* directly observe, the contributions from betas occur inside the Flip statements:
+    - assign weights to the flip statements that look like a positive/negative weight of:
+        {current_beta} -> (head_count + 1, tail_count) => Flip is heads, continue execution
+        {current_beta} -> (head_count, tail_count + 1) => Flip is tails, continue execution
+- At the end we get some big SPN representation that we recursively do inference on
+
+## SPN representation (for Gaussians and Betas)
+- Every node should store:
+    - scope (subset of cont. vars it refers to)
+- Leaf nodes represents a collection of observations 
+    - stores a *specific* concrete realization Ax = b (+ beta obs)
+- Sum nodes
+    - list of children (which in normalized form should be leaf/product nodes), each with weight 
+    - The scope of the sum node is the union of the scopes of the children
+- Product nodes
+    - list of children (which in normalized form should be leaf/sum nodes) *no weights*
+    - The scopes are *disjoint*
+    - Scope of product is again union of child scopes
+- Operations
+    - ADD: 
+        - Sum(a, b, ...) + Product = Sum(a, b, ..., Product)
+        - Sum(a, b, ...) + Sum(x, y, ...) = Sum(a, b, ..., x, y, ...)
+        - Product + Product = Sum(Product, Product)
+    - MUL:
+        1. IF scopes disjoint
+            - A * B = Product(A, B) (also normalizing nested products i.e. if A or B is a product)
+        2. ELSE
+            - some recursive thing that terminates early when scopes are disjoint (figure it out!)
+            (To look at later: vtree - way to constrain possible factorizations so that they "align" more)
