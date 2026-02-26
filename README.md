@@ -242,8 +242,8 @@ This data can then be used to truncate all the Gaussian variables as above, wher
 - Rather than having likelihood nodes all the way at the leaves, maybe we can push them up as much as possible in order to avoid having to do an O(n) pass to update all the likelihoods.
 
 ## Ideas
-- Adding in continuous latents that are conjugate
-- Can we allow for inequalties between two different Gaussian variables e.g. g1 <= g2? Or are we only able to do g1 <= val?
+- Can we involve types within the inference and distribution representation?
+    - The different 'leaves' that appear in the posterior mixture could have different types, and we could also observe those types.
 
 ## Things to look at
 - SPPL sum product networks

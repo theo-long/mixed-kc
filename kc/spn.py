@@ -1,24 +1,26 @@
 """Sum-Product Network representation for continuous latents."""
 
-from typing import Callable
 import itertools
-from abc import ABC
-from typing import NamedTuple
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
+from scipy.special import logsumexp
 
 from kc.types import LikelihoodType
 
 
-class ObservationWeights(NamedTuple):
+@dataclass
+class ObservationWeights:
     gaussian_obs: np.ndarray | None
     likelihood: LikelihoodType
 
     @property
-    def scope(self):
+    def scope(self) -> set[int]:
         if self.gaussian_obs is None:
             return set()
-        return set(self.gaussian_obs[:-1].flatnonzero())
+        return set(self.gaussian_obs[:, :-1].nonzero()[1].astype(int))
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
         if self.gaussian_obs and other.gaussian_obs:
@@ -30,22 +32,44 @@ class ObservationWeights(NamedTuple):
 
         return ObservationWeights(
             gaussian_obs,
-            self.likelihood * other.likelihood,
+            self.likelihood * other.likelihood,  # type: ignore
         )
+
+    def __add__(self, other: "ObservationWeights"):
+        if len(self.scope) + len(other.scope) == 0:
+            return ObservationWeights(None, self.likelihood + other.likelihood)  # type: ignore
+        else:
+            raise ValueError("Cannot add weights with observations")
+
+
+class LatentState:
+    pass
+
+
+def _compute_observation_log_likelihood(
+    observation: ObservationWeights, state: LatentState
+):
+    raise NotImplementedError
 
 
 class Node(ABC):
     ADD_OPS: dict[
         tuple[type["Node"], type["Node"]],
-        Callable[["Node", "Node"], "Sum | WeightNode"],
+        Callable,
     ] = {}
     MUL_OPS: dict[
         tuple[type["Node"], type["Node"]],
-        Callable[["Node", "Node"], "Product | WeightNode"],
+        Callable,
     ] = {}
 
-    def __init__(self) -> None:
-        self.scope: set[int]
+    @property
+    @abstractmethod
+    def scope(self) -> set[int]:
+        pass
+
+    @abstractmethod
+    def compute_log_likelihood(self, state: LatentState):
+        raise NotImplementedError
 
     def __add__(self, other) -> "Sum | WeightNode":
         registry_key = (type(self), type(other))
@@ -80,11 +104,20 @@ class WeightNode(Node):
     def scope(self):
         return self.weight.scope
 
+    def compute_log_likelihood(self, state: LatentState):
+        return _compute_observation_log_likelihood(self.weight, state)
+
 
 class Product(Node):
-    def __init__(self, *children) -> None:
+    def __init__(self, *children: Node) -> None:
+        # TODO: all merging logic should happen here so it is not duplicated in the add/mul methods
+        # Merging logic:
+        # - Weight nodes should be multiplied together i.e. only a single weight node should be present in the children
         self.children: list[Node] = list(children)
-        self.scope = set.union(*[c.scope for c in children])
+
+    @property
+    def scope(self):
+        return set.union(*[c.scope for c in self.children])
 
     def is_valid(self):
         for a, b in itertools.combinations(self.children, 2):
@@ -92,15 +125,26 @@ class Product(Node):
                 return False
         return True
 
+    def compute_log_likelihood(self, state: LatentState):
+        return sum([child.compute_log_likelihood(state) for child in self.children])
+
 
 class Sum(Node):
     def __init__(self, *children: Node) -> None:
+        # TODO: all merging logic should happen here so it is not duplicated in the add/mul methods
         self.children: list[Node] = list(children)
-        self.scope = set.union(*[c.scope for c in children])
+
+    @property
+    def scope(self):
+        return set.union(*[c.scope for c in self.children])
+
+    def compute_log_likelihood(self, state: LatentState):
+        return logsumexp(
+            [child.compute_log_likelihood(state) for child in self.children]
+        )
 
 
 def _add_sum_sum(a: Sum, b: Sum):
-    # TODO we might be able to merge children
     return Sum(*a.children, *b.children)
 
 
@@ -141,22 +185,43 @@ def _add_weight_weight(a: WeightNode, b: WeightNode):
         return Sum(a, b)
 
 
+def _get_max_disjoint_matching(
+    left_children: list[Node], right_children: list[Node]
+) -> tuple[list[Node], list[Node]]:
+    raise NotImplementedError()
+
+
+def _recursive_mul_sum_sum(
+    new_children: list[Node], left_children: list[Node], right_children: list[Node]
+):
+    raise NotImplementedError()
+
+
 def _mul_sum_sum(a: Sum, b: Sum):
     if a.scope.isdisjoint(b.scope):
         return Product(*a.children, *b.children)
     else:
-        raise NotImplementedError
+        # What we really want here is to find the largest possible subsets of a and b that are disjoint
+        # that way instead of distributing the whole sum, we can just compute (a + b)*(c + b)
+        # The algorithm for this is iterative bipartite matching
+        # First find largest disjoint subsets a', b', add the product a' * b' to children
+        # Then find the largest disjoint subsets of a', b_rem and a_rem, b' recursively until we are 'done' with a', b'
+        # Then repeat for a_rem, b_rem
+        raise NotImplementedError()
 
 
 def _mul_sum_product(a: Sum, b: Product):
     if a.scope.isdisjoint(b.scope):
         return Product(*a.children, b)
     else:
-        raise NotImplementedError
-
-
-def _mul_sum_weight(a: Sum, b: WeightNode):
-    return Product(a, b)
+        disjoint_children = []
+        overlapping_children = []
+        for child in a.children:
+            if child.scope.isdisjoint(b.scope):
+                disjoint_children.append(child)
+            else:
+                overlapping_children.append(child * b)
+        return Sum(Product(b, Sum(*disjoint_children)), *overlapping_children)
 
 
 def _mul_product_product(a: Product, b: Product):
@@ -166,11 +231,31 @@ def _mul_product_product(a: Product, b: Product):
         raise NotImplementedError
 
 
+def _mul_sum_weight(a: Sum, b: WeightNode):
+    if a.scope.isdisjoint(b.scope):
+        return Product(a, b)
+    else:
+        disjoint_children = []
+        overlapping_children = []
+        for child in a.children:
+            if child.scope.isdisjoint(b.scope):
+                disjoint_children.append(child)
+            else:
+                overlapping_children.append(child * b)
+        return Sum(Product(b, Sum(*disjoint_children)), *overlapping_children)
+
+
 def _mul_product_weight(a: Product, b: WeightNode):
     if a.scope.isdisjoint(b.scope):
         return Product(a, b)
     else:
-        raise NotImplementedError
+        new_children = []
+        for child in a.children:
+            if a.scope.isdisjoint(b.scope):
+                new_children.append(child)
+            else:
+                new_children.append(child * b)
+        return Product(*new_children)
 
 
 def _mul_weight_weight(a: WeightNode, b: WeightNode):
@@ -186,11 +271,11 @@ Node.ADD_OPS = {
     (WeightNode, WeightNode): _add_weight_weight,
 }
 
+# Although we might be able to define reasonable mul ops for other combinations
+# Only Weight * Node shows up in WMC
+# Should think about what the other cases might represent
 Node.MUL_OPS = {
-    (Sum, Sum): _mul_sum_sum,
-    (Sum, Product): _mul_sum_product,
     (Sum, WeightNode): _mul_sum_weight,
-    (Product, Product): _mul_product_product,
     (Product, WeightNode): _mul_product_weight,
     (WeightNode, WeightNode): _mul_weight_weight,
 }
