@@ -8,14 +8,15 @@ from typing import Callable
 import numpy as np
 from scipy.special import logsumexp
 
-from kc.types import LikelihoodType
+from kc.gaussian_math import get_gaussian_posterior, log_score_singular
+from kc.types import LikelihoodType, GradedLikelihoodType
 
 
 @dataclass
 class ObservationWeights:
-    gaussian_obs_A: np.ndarray | None
-    gaussian_obs_b: np.ndarray | None
     likelihood: LikelihoodType
+    gaussian_obs_A: np.ndarray | None = None
+    gaussian_obs_b: np.ndarray | None = None
 
     @property
     def scope(self) -> set[int]:
@@ -36,26 +37,48 @@ class ObservationWeights:
             gaussian_obs_A, gaussian_obs_b = other.gaussian_obs_A, other.gaussian_obs_b
 
         return ObservationWeights(
+            self.likelihood * other.likelihood,  # type: ignore
             gaussian_obs_A,
             gaussian_obs_b,
-            self.likelihood * other.likelihood,  # type: ignore
         )
 
     def __add__(self, other: "ObservationWeights"):
         if len(self.scope) + len(other.scope) == 0:
-            return ObservationWeights(None, self.likelihood + other.likelihood)  # type: ignore
+            return ObservationWeights(self.likelihood + other.likelihood)  # type: ignore
         else:
             raise ValueError("Cannot add weights with observations")
 
 
+@dataclass(frozen=True)
 class LatentState:
-    pass
+    cov: np.ndarray
+    mu: np.ndarray
+    log_likelihood: LikelihoodType
+
+    @classmethod
+    def initial_state(cls, n: int) -> "LatentState":
+        return cls(cov=np.eye(n), mu=np.zeros((n, 1)), log_likelihood=1.0)
 
 
-def _compute_observation_log_likelihood(
+def _update_latent_with_observation(
     observation: ObservationWeights, state: LatentState
-):
-    raise NotImplementedError
+) -> LatentState | None:
+    if observation.likelihood == 0:
+        return None
+
+    log_likelihood = state.log_likelihood + np.log(observation.likelihood).item()  # type: ignore
+    if observation.gaussian_obs_A:
+        assert observation.gaussian_obs_b
+        log_likelihood += log_score_singular(
+            state.mu, state.cov, observation.gaussian_obs_A, observation.gaussian_obs_b
+        )
+        new_mu, new_cov = get_gaussian_posterior(
+            state.mu, state.cov, observation.gaussian_obs_A, observation.gaussian_obs_b
+        )
+    else:
+        new_mu, new_cov = state.mu, state.cov
+
+    return LatentState(new_cov, new_mu, log_likelihood)
 
 
 class Node(ABC):
@@ -70,12 +93,12 @@ class Node(ABC):
 
     @property
     @abstractmethod
-    def scope(self) -> set[int]:
-        pass
+    def scope(self) -> set[int]: ...
 
     @abstractmethod
-    def compute_log_likelihood(self, state: LatentState):
-        raise NotImplementedError
+    def compute_log_likelihood(
+        self, state: LatentState
+    ) -> GradedLikelihoodType | None: ...
 
     def __add__(self, other) -> "Sum | WeightNode":
         registry_key = (type(self), type(other))
@@ -110,8 +133,13 @@ class WeightNode(Node):
     def scope(self):
         return self.weight.scope
 
-    def compute_log_likelihood(self, state: LatentState):
-        return _compute_observation_log_likelihood(self.weight, state)
+    def compute_log_likelihood(self, state: LatentState) -> GradedLikelihoodType | None:
+        latent = _update_latent_with_observation(self.weight, state)
+        if latent is None:
+            return None
+
+        rank: int = np.linalg.matrix_rank(latent.cov).item()
+        return GradedLikelihoodType(latent.log_likelihood, latent.cov.shape[0] - rank)
 
 
 class Product(Node):
@@ -132,7 +160,16 @@ class Product(Node):
         return True
 
     def compute_log_likelihood(self, state: LatentState):
-        return sum([child.compute_log_likelihood(state) for child in self.children])
+        log_likelihood = None
+        for child in self.children:
+            increment = child.compute_log_likelihood(state)
+            if log_likelihood is None:
+                log_likelihood = None
+            elif increment is None:
+                continue
+            else:
+                log_likelihood += increment
+        return log_likelihood
 
 
 class Sum(Node):
@@ -144,10 +181,15 @@ class Sum(Node):
     def scope(self):
         return set.union(*[c.scope for c in self.children])
 
-    def compute_log_likelihood(self, state: LatentState):
-        return logsumexp(
-            [child.compute_log_likelihood(state) for child in self.children]
-        )
+    def compute_log_likelihood(self, state: LatentState):  # type: ignore
+        log_likelihood = GradedLikelihoodType(1.0, 0)
+        nonzero = False
+        for child in self.children:
+            log_likelihood_update = child.compute_log_likelihood(state)
+            if log_likelihood_update:
+                nonzero = True
+                log_likelihood += log_likelihood_update
+        return log_likelihood if nonzero else None
 
 
 def _add_sum_sum(a: Sum, b: Sum):
@@ -238,6 +280,9 @@ def _mul_product_product(a: Product, b: Product):
 
 
 def _mul_sum_weight(a: Sum, b: WeightNode):
+    if b.weight.likelihood == 0:
+        return WeightNode(ObservationWeights(0.0))
+
     if a.scope.isdisjoint(b.scope):
         return Product(a, b)
     else:
@@ -252,19 +297,22 @@ def _mul_sum_weight(a: Sum, b: WeightNode):
 
 
 def _mul_product_weight(a: Product, b: WeightNode):
+    if b.weight.likelihood == 0:
+        return WeightNode(ObservationWeights(0.0))
     if a.scope.isdisjoint(b.scope):
         return Product(a, b)
-    else:
-        new_children = []
-        for child in a.children:
-            if a.scope.isdisjoint(b.scope):
-                new_children.append(child)
-            else:
-                new_children.append(child * b)
-        return Product(*new_children)
+    new_children = []
+    for child in a.children:
+        if a.scope.isdisjoint(b.scope):
+            new_children.append(child)
+        else:
+            new_children.append(child * b)
+    return Product(*new_children)
 
 
 def _mul_weight_weight(a: WeightNode, b: WeightNode):
+    if b.weight.likelihood == 0:
+        return WeightNode(ObservationWeights(0.0))
     return WeightNode(a.weight * b.weight)
 
 

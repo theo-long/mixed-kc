@@ -163,7 +163,7 @@ def log_score_singular(mu, cov, A=None, b=None, Q=None, R=None, tol=1e-12):
         # Assuming Q, R captures the relevant system.
 
         if np.linalg.norm(v - v_proj) > tol:
-            return -float("inf")
+            return None
 
         # 6. Mahalanobis
         # val = v.T @ Omega+ @ v
@@ -199,7 +199,7 @@ def log_score_singular(mu, cov, A=None, b=None, Q=None, R=None, tol=1e-12):
     # Project residual onto the null space of S
     null_space_proj = residual - (U[:, non_zero] @ (U[:, non_zero].T @ residual))
     if np.any(np.abs(null_space_proj) > tol):
-        return -np.inf  # Observation is impossible under the model
+        return None  # Observation is impossible under the model
 
     # 2. Compute Squared Mahalanobis Distance using SVD components
     # (b-Am).T @ S+ @ (b-Am)

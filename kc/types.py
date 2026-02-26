@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import sympy
+from scipy.special import logsumexp
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
@@ -46,3 +48,24 @@ def get_float_value(
             {symbol**i: prior.moment(i) for i in range(1, max_degree + 1)}
         )
     return float(coeff)
+
+
+@dataclass
+class GradedLikelihoodType:
+    log_likelihood: LikelihoodType
+    n_obs: int
+
+    def __add__(self, other: "GradedLikelihoodType"):
+        if self.n_obs < other.n_obs:
+            return self
+        elif other.n_obs < self.n_obs:
+            return other
+        else:
+            log_likelihood = logsumexp(
+                [self.log_likelihood, other.log_likelihood]
+            ).item()  # type: ignore
+            return GradedLikelihoodType(log_likelihood, self.n_obs)
+
+    def __mul__(self, other: "GradedLikelihoodType"):
+        log_likelihood = self.log_likelihood + other.log_likelihood  # type: ignore
+        return GradedLikelihoodType(log_likelihood, self.n_obs + other.n_obs)

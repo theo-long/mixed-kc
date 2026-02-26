@@ -5,21 +5,35 @@ from kc.base import PExpr
 from kc.config import settings
 from kc.gaussian_math import get_expr_distribution
 from kc.model_count import model_count
-from kc.profiling import profile
 from kc.real_values import GaussianSum, GaussianVariable, RealConstant
+from kc.spn import LatentState, Node
 from kc.state import KCState, PreprocessState
 from kc.terms import EnumResult
 from kc.types import get_degree, get_float_value
 
 
-@profile
+def compute_spn_likelihood(spn: Node, state: KCState) -> float:
+    latent = LatentState.initial_state(state.gaussian_count)
+    graded_log_likelihood = spn.compute_log_likelihood(latent)
+    if graded_log_likelihood is None:
+        return 0.0
+
+    if settings.debug:
+        print("Log likelihood pre-simplification:", graded_log_likelihood)
+    likelihood = get_float_value(
+        np.exp(graded_log_likelihood.log_likelihood),  # type: ignore
+        state.priors,
+    )
+    likelihood = get_float_value(likelihood, {})
+    return likelihood
+
+
 def preprocess(expr: PExpr):
     preprocess_state = PreprocessState()
     expr.preprocess({}, preprocess_state)
     return preprocess_state
 
 
-@profile
 def kc(expr: PExpr, preprocess_state: PreprocessState):
     state = KCState(preprocess_state)
     val = expr.kc({}, state)
@@ -34,39 +48,24 @@ def kc(expr: PExpr, preprocess_state: PreprocessState):
     return val, state
 
 
-@profile
 def get_normalizing_constant(state: KCState):
-    posterior_mixture = model_count(
+    spn = model_count(
         state.bdd,
         state.observes_all_hold,
         state.weights,
     )
-    normalizing_constant = get_float_value(
-        sum(map(lambda x: x[0], posterior_mixture)), state.priors
-    )
-
-    if settings.debug:
-        print("Normalizing constant pre-simplification:", normalizing_constant)
-    normalizing_constant = get_float_value(normalizing_constant, {})
-    return normalizing_constant, posterior_mixture
+    return compute_spn_likelihood(spn, state)
 
 
-@profile
-def binary_inference(val, state, normalizing_constant, posterior_mixture):
-    posterior_mixture_with_val = model_count(
+def binary_inference(val, state: KCState, normalizing_constant: float):
+    spn = model_count(
         state.bdd,
         val & state.observes_all_hold,
         state.weights,
     )
-    unnormalized_prob = sum(map(lambda x: x[0], posterior_mixture_with_val))
-    if settings.debug:
-        print("Unnormalized prob pre-simplification:", unnormalized_prob)
-    unnormalized_prob = get_float_value(unnormalized_prob, state.priors)
-
-    return (unnormalized_prob / normalizing_constant, normalizing_constant)
+    return compute_spn_likelihood(spn, state)
 
 
-@profile
 def gaussian_inference(val, state, normalizing_constant, posterior_mixture):
     normalized_posterior = []
     min_degree = float("inf")
@@ -91,9 +90,8 @@ def gaussian_inference(val, state, normalizing_constant, posterior_mixture):
     return normalized_posterior, normalizing_constant
 
 
-@profile
-def enum_inference(val, state, normalizing_constant, posterior_mixture):
-    probs = {}
+def enum_inference(val: EnumResult, state: KCState, normalizing_constant: float):
+    probs: dict[str, float] = {}
     for i, enum_str in enumerate(val.enum_type.values):
         constraint = state.bdd.true
         for bit_i in range(val.enum_type.n_bits):
@@ -104,26 +102,20 @@ def enum_inference(val, state, normalizing_constant, posterior_mixture):
             )
             constraint = constraint & bits_eq
 
-        posterior_mixture_with_val = model_count(
+        spn = model_count(
             state.bdd,
             constraint & state.observes_all_hold,
             state.weights,
         )
-        unnormalized_prob = sum(map(lambda x: x[0], posterior_mixture_with_val))
-        if settings.debug:
-            print(
-                f"Unnormalized prob for {enum_str} pre-simplification:",
-                unnormalized_prob,
-            )
-        unnormalized_prob = get_float_value(unnormalized_prob, state.priors)
+        unnormalized_prob = compute_spn_likelihood(spn, state)
         probs[enum_str] = unnormalized_prob / normalizing_constant
-    return probs, normalizing_constant
+    return probs
 
 
 def run_kc(expr: PExpr):
     preprocess_state = preprocess(expr)
     val, state = kc(expr, preprocess_state)
-    normalizing_constant, posterior_mixture = get_normalizing_constant(state)
+    normalizing_constant = get_normalizing_constant(state)
 
     if normalizing_constant == 0:
         return None, normalizing_constant
@@ -133,10 +125,8 @@ def run_kc(expr: PExpr):
 
     # Inference for binary variable
     if isinstance(val, _bdd.Function):
-        return binary_inference(val, state, normalizing_constant, posterior_mixture)
-    elif isinstance(val, GaussianSum):
-        return gaussian_inference(val, state, normalizing_constant, posterior_mixture)
+        return binary_inference(val, state, normalizing_constant), normalizing_constant
     elif isinstance(val, EnumResult):
-        return enum_inference(val, state, normalizing_constant, posterior_mixture)
+        return enum_inference(val, state, normalizing_constant), normalizing_constant
     else:
         raise TypeError(f"Cannot perform inference for value of type {type(val)}")

@@ -19,9 +19,9 @@ from kc.real_values import (
     RealConstant,
     Union,
 )
+from kc.spn import ObservationWeights
 from kc.types import (
     InequalityLiteral,
-    WeightType,
     epsilon,
     inequality_flip_mapping,
 )
@@ -103,8 +103,8 @@ class KCState(RandomVariableCounter):
         self.weights: dict[
             int,
             tuple[
-                WeightType,
-                WeightType,
+                ObservationWeights,
+                ObservationWeights,
             ],
         ] = {}
         self.priors: dict[sympy.Symbol, DistributionWithMoments] = {}
@@ -134,17 +134,16 @@ class KCState(RandomVariableCounter):
         vars_str = ",".join(f"{v.scale}*g{v.var}" for v in rvs)
         return f"_{{{vars_str}}}={val}"
 
-    def create_observation_vector(
+    def create_observation_Ab(
         self,
         vars: list["GaussianVariable"],
         val: float,
     ):
-        """Create a numpy array representing observation v^T x = val"""
-        v = np.zeros(self.gaussian_count + 1)
+        """Create a numpy array representing observation A x = b"""
+        v = np.zeros((1, self.gaussian_count))
         for var in vars:
             v[var.var] = var.scale
-        v[0] = val
-        return v
+        return np.array([val])
 
     def get_gaussian_sum_symbolic_observe_expression(
         self,
@@ -170,10 +169,11 @@ class KCState(RandomVariableCounter):
 
         node_name = self._get_symbolic_observe_eq_node_name(new_vars, val)
         self.bdd.declare(node_name)
+        A, b = self.create_observation_Ab(new_vars, val)
         self.set_weight(
             node_name,
-            self.create_observation_vector(new_vars, val),
-            1.0,
+            ObservationWeights(1.0, A, b),
+            ObservationWeights(1.0),
         )
         return self.bdd.var(node_name)
 
@@ -251,7 +251,7 @@ class KCState(RandomVariableCounter):
         self.set_weight(
             equality_node_name,
             weight,
-            1.0,
+            ObservationWeights(1.0),
         )
         self.bdd_equality_nodes[var].add(equality_node_name)
         return self.bdd.var(equality_node_name)
@@ -283,8 +283,8 @@ class KCState(RandomVariableCounter):
 
             self.set_weight(
                 interval_node_name,
-                flip_prob,
-                1.0 - flip_prob,
+                ObservationWeights(flip_prob),
+                ObservationWeights(1.0 - flip_prob),
             )
 
         return sorted_thresholds
@@ -406,8 +406,8 @@ class KCState(RandomVariableCounter):
     def set_weight(
         self,
         var,
-        pos_weight: WeightType,
-        neg_weight: WeightType,
+        pos_weight: ObservationWeights,
+        neg_weight: ObservationWeights,
     ):
         self.weights[var] = (pos_weight, neg_weight)
 
