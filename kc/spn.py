@@ -13,25 +13,31 @@ from kc.types import LikelihoodType
 
 @dataclass
 class ObservationWeights:
-    gaussian_obs: np.ndarray | None
+    gaussian_obs_A: np.ndarray | None
+    gaussian_obs_b: np.ndarray | None
     likelihood: LikelihoodType
 
     @property
     def scope(self) -> set[int]:
-        if self.gaussian_obs is None:
+        if self.gaussian_obs_A is None:
             return set()
-        return set(self.gaussian_obs[:, :-1].nonzero()[1].astype(int))
+        return set(self.gaussian_obs_A.nonzero()[1].astype(int))
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
-        if self.gaussian_obs and other.gaussian_obs:
-            gaussian_obs = np.stack([self.gaussian_obs, other.gaussian_obs], axis=-1)
-        elif self.gaussian_obs:
-            gaussian_obs = self.gaussian_obs
+        if self.gaussian_obs_A and other.gaussian_obs_A:
+            assert self.gaussian_obs_b is not None and other.gaussian_obs_b is not None
+            gaussian_obs_A = np.stack(
+                [self.gaussian_obs_A, other.gaussian_obs_A], axis=-1
+            )
+            gaussian_obs_b = np.concatenate([self.gaussian_obs_b, other.gaussian_obs_b])
+        elif self.gaussian_obs_A:
+            gaussian_obs_A, gaussian_obs_b = self.gaussian_obs_A, self.gaussian_obs_b
         else:
-            gaussian_obs = other.gaussian_obs
+            gaussian_obs_A, gaussian_obs_b = other.gaussian_obs_A, other.gaussian_obs_b
 
         return ObservationWeights(
-            gaussian_obs,
+            gaussian_obs_A,
+            gaussian_obs_b,
             self.likelihood * other.likelihood,  # type: ignore
         )
 
