@@ -270,10 +270,10 @@ class TruncatableGaussianVariable(GaussianVariable, RealVariable, Truncatable):
 
         inequality_clause = state.bdd.true
         if lower != float("-inf"):
-            inequality_clause = self.get_inequality_expr(val, state, ">")
+            inequality_clause = self.get_inequality_expr(lower * self.scale + self.shift, state, ">")
         if upper != float("inf"):
             inequality_clause = inequality_clause & self.get_inequality_expr(
-                val, state, ">="
+                upper * self.scale + self.shift, state, ">="
             )
 
         equality_node = self._create_eq_node(val, state, lower, upper)
