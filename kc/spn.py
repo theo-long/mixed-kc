@@ -153,7 +153,11 @@ class WeightNode(Node):
         if latent is None:
             return None
 
-        rank: int = np.linalg.matrix_rank(latent.cov).item()
+        rank: int
+        if latent.cov.shape[0] > 0:
+            rank = np.linalg.matrix_rank(latent.cov).item()
+        else:
+            rank = 0
         return GradedLikelihoodType(latent.log_likelihood, latent.cov.shape[0] - rank)
 
     def _tree_str(self, prefix="", is_last=True):
