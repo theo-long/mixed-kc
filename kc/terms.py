@@ -4,9 +4,8 @@ from typing import TYPE_CHECKING, Any, Sequence
 
 from kc.base import AExpr, PExpr
 from kc.real_values import (
-    GaussianSum,
-    GaussianVariable,
     RealValue,
+    Truncatable,
     TruncatableGaussianVariable,
     Union,
     merge_real_values,
@@ -79,7 +78,7 @@ class Equality(PExpr):
                 eq_bdd = eq_bdd & bits_eq
             return eq_bdd
         elif hasattr(l_res, "to_expr") and hasattr(r_res, "to_expr"):
-            return (l_res & r_res) | (~l_res & ~r_res)
+            return (l_res & r_res) | (~l_res & ~r_res)  # type: ignore
         else:
             raise TypeError(
                 f"Equality only supported between Enums or Booleans, got {type(l_res)} and {type(r_res)}"
@@ -272,35 +271,6 @@ class Observe(PExpr):
         return self.cond.preprocess(env, state)
 
 
-def nonsymbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"):
-    if isinstance(symbolic_value, GaussianSum):
-        assert len(symbolic_value.rvs) == 1, "No Gaussian sums in nonsymbolic mode"
-        symbolic_value = next(iter(symbolic_value.rvs))  # type: ignore
-    if isinstance(symbolic_value, GaussianVariable):
-        clause, _ = state.get_gaussian_variable_equality_expression(
-            symbolic_value.var, symbolic_value.scale, symbolic_value.shift, val
-        )
-    elif isinstance(symbolic_value, Union):
-        clause = state.get_gaussian_union_equality_expression(symbolic_value, val)
-    else:
-        raise ValueError(f"Unexpected type: {type(symbolic_value)}")
-
-    state._observes_all_hold = state._observes_all_hold & clause
-
-
-def symbolic_observe_real(symbolic_value: PExpr, val: float, state: "KCState"):
-    if isinstance(symbolic_value, GaussianSum):
-        clause = state.get_gaussian_sum_symbolic_observe_expression(symbolic_value, val)
-    elif isinstance(symbolic_value, Union):
-        clause = state.get_gaussian_union_symbolic_observe_expression(
-            symbolic_value, val
-        )
-    else:
-        raise ValueError(f"Unexpected type: {type(symbolic_value)}")
-
-    state._observes_all_hold = state._observes_all_hold & clause
-
-
 @dataclass
 class ObserveReal(PExpr):
     symbolic_value: PExpr
@@ -308,28 +278,14 @@ class ObserveReal(PExpr):
 
     def kc(self, env, state: "KCState"):
         symbolic_value = self.symbolic_value.kc(env, state)
-        if getattr(symbolic_value, "truncatable", False):
-            nonsymbolic_observe_real(
-                symbolic_value,
-                self.val,
-                state,
+        if not isinstance(symbolic_value, RealValue):
+            raise ValueError(
+                "Can only ObserveReal an expression that evaluates to a RealValue"
             )
-        else:
-            symbolic_observe_real(symbolic_value, self.val, state)
+        state._observes_all_hold &= symbolic_value.get_observe_expr(self.val, state)
         return state.bdd.true
 
     def preprocess(self, env, state):
-        symbolic_value = self.symbolic_value.preprocess(env, state)
-        if isinstance(symbolic_value, GaussianSum):
-            state.interaction_counter.add_observation(symbolic_value)
-            state.obs_counter.add_observation(symbolic_value)
-        elif isinstance(symbolic_value, Union):
-            for val in symbolic_value.values:
-                if isinstance(val, GaussianSum):
-                    state.interaction_counter.add_observation(val)
-                    state.obs_counter.add_observation(val)
-        else:
-            raise ValueError(f"Unexpected type: {type(symbolic_value)}")
         return
 
 
@@ -341,22 +297,11 @@ class Inequality(PExpr):
 
     def kc(self, env, state: "KCState"):
         symbolic_value = self.symbolic_value.kc(env, state)
-        if isinstance(symbolic_value, TruncatableGaussianVariable):
-            clause = state.get_gaussian_variable_inequality_expression(
-                symbolic_value.var,
-                symbolic_value.scale,
-                symbolic_value.shift,
-                self.inequality,
+        if isinstance(symbolic_value, Truncatable):
+            clause = symbolic_value.get_inequality_expr(
                 self.val,
-            )
-        elif isinstance(symbolic_value, Union):
-            if not all(
-                isinstance(v, TruncatableGaussianVariable)
-                for v in symbolic_value.values
-            ):
-                raise ValueError("Can only truncate TruncatableGaussian")
-            clause = state.get_gaussian_union_inequality_expression(
-                symbolic_value, self.inequality, self.val
+                state,
+                self.inequality,
             )
         else:
             raise TypeError(f"Unexpected type: {type(symbolic_value)}")

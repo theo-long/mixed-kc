@@ -1,30 +1,16 @@
-import bisect
 import itertools
-import operator
 from collections import defaultdict
-from functools import reduce
 
 import dd.autoref as _bdd
-import numpy as np
 import sympy
-from scipy.cluster.hierarchy import DisjointSet
 
-from kc.config import settings
 from kc.real_values import (
     DistributionWithDensity,
     DistributionWithMoments,
     Gaussian,
-    GaussianSum,
     GaussianVariable,
-    RealConstant,
-    Union,
 )
 from kc.spn import ObservationWeights
-from kc.types import (
-    InequalityLiteral,
-    epsilon,
-    inequality_flip_mapping,
-)
 
 
 class RandomVariableCounter:
@@ -57,42 +43,10 @@ class TruncationCounter:
         return self.truncations.get(var, set())
 
 
-# Used so that we can treat disjoint subsets independently in inference
-class LatentInteractionCounter:
-    """Union-Find data structure which identifies disjoint subsets of interacting continuous latent variables."""
-
-    def __init__(self):
-        self.disjoint_sets = DisjointSet()
-
-    def add_observation(self, symbolic_value: GaussianSum):
-        prev: int | None = None
-        for rv in symbolic_value.rvs:
-            if isinstance(rv, RealConstant):
-                continue
-            self.disjoint_sets.add(rv.var)
-            if prev:
-                self.disjoint_sets.merge(rv.var, prev)
-                prev = rv.var
-
-
-# Used to determine the trie prefix ordering
-class ObservationFrequencyCounter:
-    """Count the number of sample paths along which a particular Gaussian observation occurs."""
-
-    def __init__(self):
-        # TODO
-        pass
-
-    def add_observation(self, symbolic_value: GaussianSum):
-        pass
-
-
 class PreprocessState:
     def __init__(self) -> None:
         self.truncation_counter = TruncationCounter()
         self.rv_counter = RandomVariableCounter()
-        self.obs_counter = ObservationFrequencyCounter()
-        self.interaction_counter = LatentInteractionCounter()
 
 
 class KCState(RandomVariableCounter):
@@ -114,115 +68,12 @@ class KCState(RandomVariableCounter):
         self.gaussian_count = preprocess_state.rv_counter.variable_count(Gaussian)
         super().__init__()
 
-    def get_gaussian_union_symbolic_observe_expression(
-        self,
-        symbolic_value: Union[GaussianSum],
-        val: float,
-    ) -> _bdd._Ref:
-        union_clause = self.bdd.false
-        for f, v in zip(symbolic_value.formulae, symbolic_value.values):
-            # get the observe clause for this value
-            clause = self.get_gaussian_sum_symbolic_observe_expression(v, val)
-            guarded_clause = f & clause
-            union_clause = union_clause | guarded_clause
-        return union_clause
-
     def _get_symbolic_observe_eq_node_name(
         self, rvs: list[GaussianVariable], val: float
     ):
         rvs = sorted(rvs, key=lambda x: x.var)
         vars_str = ",".join(f"{v.scale}*g{v.var}" for v in rvs)
         return f"_{{{vars_str}}}={val}"
-
-    def create_observation_Ab(
-        self,
-        vars: list["GaussianVariable"],
-        val: float,
-    ):
-        """Create a numpy array representing observation A x = b"""
-        v = np.zeros((1, self.gaussian_count))
-        for var in vars:
-            v[0, var.var] = var.scale
-        return v, np.array([val])
-
-    def get_gaussian_sum_symbolic_observe_expression(
-        self,
-        symbolic_value: GaussianSum,
-        val: float,
-    ) -> _bdd._Ref:
-        rvs = symbolic_value.rvs
-
-        # Move all shift terms into the value
-        new_vars: list[GaussianVariable] = []
-        for v in rvs:
-            if isinstance(v, RealConstant):
-                val -= v.value
-                continue
-            val -= v.shift
-            new_vars.append(
-                GaussianVariable(
-                    var=v.var,
-                    scale=v.scale,
-                    shift=0.0,
-                )
-            )
-
-        node_name = self._get_symbolic_observe_eq_node_name(new_vars, val)
-        self.bdd.declare(node_name)
-        self.set_weight(
-            node_name,
-            ObservationWeights(1.0, [{v.var: v.scale for v in new_vars}], [val]),
-            ObservationWeights(1.0),
-        )
-        return self.bdd.var(node_name)
-
-    def get_gaussian_union_equality_expression(
-        self,
-        symbolic_value: Union,
-        val: float,
-    ):
-        unguarded_clauses = []
-        equality_nodes = []
-        for v in symbolic_value.values:
-            # get the observe clause for this value
-            clause, equality_node = self.get_gaussian_variable_equality_expression(
-                v.var, v.scale, v.shift, val
-            )
-            unguarded_clauses.append(clause)
-            equality_nodes.append(equality_node)
-
-        guarded_clause = self.bdd.false
-        for i in range(len(symbolic_value.values)):
-            clause = unguarded_clauses[i]
-
-            # Add formula guarding this value to the clause
-            clause = clause & symbolic_value.formulae[i]
-            guarded_clause = guarded_clause | clause
-
-        return guarded_clause
-
-    def get_gaussian_union_inequality_expression(
-        self,
-        symbolic_value: Union,
-        inequality: InequalityLiteral,
-        val: float,
-    ):
-        unguarded_clauses = []
-        for v in symbolic_value.values:
-            # get the observe clause for this value
-            clause = self.get_gaussian_variable_inequality_expression(
-                v.var, v.scale, v.shift, inequality, val
-            )
-            unguarded_clauses.append(clause)
-
-        return reduce(
-            operator.or_,
-            (
-                formula & clause
-                for formula, clause in zip(symbolic_value.formulae, unguarded_clauses)
-            ),
-            self.bdd.false,
-        )
 
     def _get_eq_node_name(self, var: int, val: float, lower: float, upper: float):
         return f"_g{var}={val}|{lower}<g{var}<={upper}"
@@ -233,30 +84,7 @@ class KCState(RandomVariableCounter):
         upper += 0.0
         return f"_g{var}<={upper}|>{lower}"
 
-    def _create_eq_node(
-        self, var: int, val: float, lower: float, upper: float, scale: float
-    ):
-        equality_node_name = self._get_eq_node_name(var, val, lower, upper)
-        self.bdd.declare(equality_node_name)
-        # Compute weight for equality node
-        # It is the density at val divided by the normalization constant for the interval
-        self.rvs[var].pdf(val)
-        weight = self.rvs[var].pdf(val) / (
-            self.rvs[var].cdf(upper) - self.rvs[var].cdf(lower)
-        )
-        weight = weight * epsilon  # type: ignore
-        if settings.transform_measures:
-            weight /= scale
-        self.set_weight(
-            equality_node_name,
-            ObservationWeights(weight),
-            ObservationWeights(1.0),
-        )
-        self.bdd_equality_nodes[var].add(equality_node_name)
-        return self.bdd.var(equality_node_name)
-
-    def add_bdd_nodes_for_gaussian_variable(self, var: int, scale: float, shift: float):
-        # Get Gaussian parameters
+    def add_bdd_nodes_for_truncatable_variable(self, var: int):
         rv = self.rvs[var]
         sorted_thresholds = sorted(self.truncations.get(var, set()))
         sorted_thresholds.insert(0, float("-inf"))
@@ -287,97 +115,6 @@ class KCState(RandomVariableCounter):
             )
 
         return sorted_thresholds
-
-    def get_gaussian_variable_inequality_expression(
-        self,
-        var: int,
-        scale: float,
-        shift: float,
-        inequality: InequalityLiteral,
-        val: float,
-    ):
-        val = (val - shift) / scale
-        if scale < 0:
-            inequality = inequality_flip_mapping[inequality]
-        sorted_thresholds = (
-            [float("-inf")]
-            + sorted(self.truncations.get(var, set()))
-            + [
-                float("inf"),
-            ]
-        )
-        split_index = sorted_thresholds.index(val)
-        if inequality in ["<=", "<"]:
-            # Some node (x <= upper | x > lower) where upper <= val must be true
-            clause = self.bdd.false
-            lower, upper = 0.0, 0.0
-            for i in range(0, split_index):
-                lower, upper = sorted_thresholds[i], sorted_thresholds[i + 1]
-                clause = clause | self.bdd.var(
-                    self._get_interval_node_name(var, lower, upper)
-                )
-            if inequality == "<":
-                eq_node_name = self._get_eq_node_name(var, val, lower, upper)
-                if eq_node_name not in self.bdd_equality_nodes[var]:
-                    eq_node = self._create_eq_node(var, val, lower, upper, scale)
-                else:
-                    eq_node = self.bdd.var(eq_node_name)
-                clause = clause & (~eq_node)
-        elif inequality in [">", ">="]:
-            # Every node representing (x <= t | x > s) for t <= val must be false
-            clause = self.bdd.true
-            lower, upper = 0.0, 0.0
-            for i in range(1, split_index + 1):
-                lower = sorted_thresholds[i - 1]
-                upper = sorted_thresholds[i]
-                clause = clause & ~self.bdd.var(
-                    self._get_interval_node_name(var, lower, upper)
-                )
-            if inequality == ">=":
-                eq_node_name = self._get_eq_node_name(var, val, lower, upper)
-                if eq_node_name not in self.bdd_equality_nodes[var]:
-                    eq_node = self._create_eq_node(var, val, lower, upper, scale)
-                else:
-                    eq_node = self.bdd.var(eq_node_name)
-                clause = clause | eq_node
-        else:
-            raise ValueError(f"Unexpected inequality: {inequality}")
-
-        return clause
-
-    def get_gaussian_variable_equality_expression(
-        self, var: int, scale: float, shift: float, val: float
-    ):
-        val = (val - shift) / scale
-        sorted_thresholds = (
-            [float("-inf")]
-            + sorted(self.truncations.get(var, set()))
-            + [
-                float("inf"),
-            ]
-        )
-        bisect_index = bisect.bisect_left(sorted_thresholds, val)
-        lower, upper = (
-            sorted_thresholds[bisect_index - 1],
-            sorted_thresholds[bisect_index],
-        )
-
-        inequality_clause = self.bdd.true
-        if lower != float("-inf"):
-            inequality_clause = self.get_gaussian_variable_inequality_expression(
-                var, 1.0, 0.0, ">", lower
-            )
-        if upper != float("inf"):
-            inequality_clause = (
-                inequality_clause
-                & self.get_gaussian_variable_inequality_expression(
-                    var, 1.0, 0.0, "<=", upper
-                )
-            )
-
-        equality_node = self._create_eq_node(var, val, lower, upper, scale)
-        equality_clause = inequality_clause & equality_node
-        return equality_clause, equality_node
 
     @property
     def mutually_compatible_equalities(self):

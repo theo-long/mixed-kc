@@ -1,16 +1,23 @@
+import bisect
 import itertools
 import operator
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
-from typing import Any, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Self
 
+import dd.autoref as _bdd
 import sympy
 from scipy.stats import beta, norm
 
 from kc.base import AExpr, PExpr
 from kc.config import settings
+from kc.spn import ObservationWeights
+from kc.types import InequalityLiteral, inequality_flip_mapping
+
+if TYPE_CHECKING:
+    from kc.state import KCState
 
 
 class DistributionWithDensity:
@@ -90,7 +97,7 @@ class TruncatableGaussian(AExpr, DistributionWithDensity):
 
     def kc(self, env, state):
         var = state.next_variable(self)
-        state.add_bdd_nodes_for_gaussian_variable(var, scale=self.std, shift=self.mean)
+        state.add_bdd_nodes_for_truncatable_variable(var)
         return TruncatableGaussianVariable(var, scale=self.std, shift=self.mean)
 
     def preprocess(self, env: dict[str, PExpr], state) -> Any:
@@ -105,7 +112,8 @@ class TruncatableGaussian(AExpr, DistributionWithDensity):
 
 
 class RealValue(ABC):
-    pass
+    @abstractmethod
+    def get_observe_expr(self, val: float, state: "KCState") -> _bdd.Function: ...
 
 
 class RealVariable(RealValue):
@@ -122,6 +130,12 @@ class AffineTransformable(ABC):
 class RealConstant(RealVariable, AffineTransformable, AExpr):
     value: float
 
+    def get_observe_expr(self, val: float, state: "KCState"):
+        if self.value == val:
+            return state.bdd.true
+        else:
+            return state.bdd.false
+
     def apply_affine(self, scale: float, shift: float):
         return RealConstant(self.value * scale + shift)
 
@@ -133,7 +147,7 @@ class RealConstant(RealVariable, AffineTransformable, AExpr):
 
 
 @dataclass(eq=True, frozen=True)
-class GaussianVariable(RealVariable, AffineTransformable):
+class GaussianVariable(AffineTransformable):
     var: int
     scale: float = 1.0
     shift: float = 0.0
@@ -159,14 +173,113 @@ class GaussianVariable(RealVariable, AffineTransformable):
             raise ValueError("Cannot add GaussianVariables with different vars")
 
 
-class Truncatable:
-    @property
-    def truncatable(self):
-        return True
+class Truncatable(ABC):
+    @abstractmethod
+    def get_inequality_expr(
+        self, val: float, state: "KCState", inequality: InequalityLiteral
+    ) -> _bdd.Function: ...
 
 
 @dataclass(eq=True, frozen=True)
-class TruncatableGaussianVariable(GaussianVariable, Truncatable):
+class TruncatableGaussianVariable(GaussianVariable, RealVariable, Truncatable):
+    def get_inequality_expr(
+        self, val: float, state: "KCState", inequality: InequalityLiteral
+    ):
+        val = (val - self.shift) / self.scale
+        if self.scale < 0:
+            inequality = inequality_flip_mapping[inequality]
+        sorted_thresholds = (
+            [float("-inf")]
+            + sorted(state.truncations.get(self.var, set()))
+            + [
+                float("inf"),
+            ]
+        )
+        split_index = sorted_thresholds.index(val)
+        if inequality in ["<=", "<"]:
+            # Some node (x <= upper | x > lower) where upper <= val must be true
+            clause = state.bdd.false
+            lower, upper = 0.0, 0.0
+            for i in range(0, split_index):
+                lower, upper = sorted_thresholds[i], sorted_thresholds[i + 1]
+                clause = clause | state.bdd.var(
+                    state._get_interval_node_name(self.var, lower, upper)
+                )
+            if inequality == "<":
+                eq_node_name = state._get_eq_node_name(self.var, val, lower, upper)
+                if eq_node_name not in state.bdd_equality_nodes[self.var]:
+                    eq_node = self._create_eq_node(val, state, lower, upper)
+                else:
+                    eq_node = state.bdd.var(eq_node_name)
+                clause = clause & (~eq_node)
+        elif inequality in [">", ">="]:
+            # Every node representing (x <= t | x > s) for t <= val must be false
+            clause = state.bdd.true
+            lower, upper = 0.0, 0.0
+            for i in range(1, split_index + 1):
+                lower = sorted_thresholds[i - 1]
+                upper = sorted_thresholds[i]
+                clause = clause & ~state.bdd.var(
+                    state._get_interval_node_name(self.var, lower, upper)
+                )
+            if inequality == ">=":
+                eq_node_name = state._get_eq_node_name(self.var, val, lower, upper)
+                if eq_node_name not in state.bdd_equality_nodes[self.var]:
+                    eq_node = self._create_eq_node(val, state, lower, upper)
+                else:
+                    eq_node = state.bdd.var(eq_node_name)
+                clause = clause | eq_node
+        else:
+            raise ValueError(f"Unexpected inequality: {inequality}")
+
+        return clause
+
+    def _create_eq_node(self, val: float, state: "KCState", lower: float, upper: float):
+        equality_node_name = state._get_eq_node_name(self.var, val, lower, upper)
+        state.bdd.declare(equality_node_name)
+        # Compute weight for equality node
+        # It is the density at val divided by the normalization constant for the interval
+        state.rvs[self.var].pdf(val)
+        weight = state.rvs[self.var].pdf(val) / (
+            state.rvs[self.var].cdf(upper) - state.rvs[self.var].cdf(lower)
+        )
+        if settings.transform_measures:
+            weight /= self.scale
+        state.set_weight(
+            equality_node_name,
+            ObservationWeights(weight, truncated_gaussian_obs=1),
+            ObservationWeights(1.0),
+        )
+        state.bdd_equality_nodes[self.var].add(equality_node_name)
+        return state.bdd.var(equality_node_name)
+
+    def get_observe_expr(self, val: float, state: "KCState"):
+        val = (val - self.shift) / self.scale
+        sorted_thresholds = (
+            [float("-inf")]
+            + sorted(state.truncations.get(self.var, set()))
+            + [
+                float("inf"),
+            ]
+        )
+        bisect_index = bisect.bisect_left(sorted_thresholds, val)
+        lower, upper = (
+            sorted_thresholds[bisect_index - 1],
+            sorted_thresholds[bisect_index],
+        )
+
+        inequality_clause = state.bdd.true
+        if lower != float("-inf"):
+            inequality_clause = self.get_inequality_expr(val, state, ">")
+        if upper != float("inf"):
+            inequality_clause = inequality_clause & self.get_inequality_expr(
+                val, state, ">="
+            )
+
+        equality_node = self._create_eq_node(val, state, lower, upper)
+        equality_clause = inequality_clause & equality_node
+        return equality_clause
+
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
             return RealConstant(0.0)
@@ -186,13 +299,32 @@ class BetaVariable(RealVariable):
         return self
 
 
-T = TypeVar("T", bound=RealVariable)
-
-
 @dataclass(eq=True, frozen=True)
-class Union[T](RealValue, AffineTransformable):
+class Union[T: RealVariable](RealValue, AffineTransformable, Truncatable):
     formulae: tuple[Any]
     values: tuple[T]
+
+    def get_inequality_expr(
+        self, val: float, state: "KCState", inequality: InequalityLiteral
+    ) -> _bdd.Function:
+        union_clause = state.bdd.false
+        for f, v in zip(self.formulae, self.values):
+            if not isinstance(v, Truncatable):
+                raise ValueError("All elements of union must be Truncatable")
+            # get the observe clause for this value
+            clause = v.get_inequality_expr(val, state, inequality)
+            guarded_clause = f & clause
+            union_clause = union_clause | guarded_clause
+        return union_clause
+
+    def get_observe_expr(self, val: float, state: "KCState"):
+        union_clause = state.bdd.false
+        for f, v in zip(self.formulae, self.values):
+            # get the observe clause for this value
+            clause = v.get_observe_expr(val, state)
+            guarded_clause = f & clause
+            union_clause = union_clause | guarded_clause
+        return union_clause
 
     def preprocess(self, env, state):
         return self
@@ -216,6 +348,31 @@ class GaussianSum(RealVariable, AffineTransformable):
     """Sum of n Gaussian variables after evaluation"""
 
     rvs: frozenset[GaussianVariable | RealConstant]
+
+    def get_observe_expr(self, val: float, state: "KCState"):
+        # Move all shift terms into the value
+        new_vars: list[GaussianVariable] = []
+        for v in self.rvs:
+            if isinstance(v, RealConstant):
+                val -= v.value
+                continue
+            val -= v.shift
+            new_vars.append(
+                GaussianVariable(
+                    var=v.var,
+                    scale=v.scale,
+                    shift=0.0,
+                )
+            )
+
+        node_name = state._get_symbolic_observe_eq_node_name(new_vars, val)
+        state.bdd.declare(node_name)
+        state.set_weight(
+            node_name,
+            ObservationWeights(1.0, [{v.var: v.scale for v in new_vars}], [val]),
+            ObservationWeights(1.0),
+        )
+        return state.bdd.var(node_name)
 
     def apply_affine(self, scale: float, shift: float):
         if scale == 0.0:
@@ -258,7 +415,8 @@ class GaussianSum(RealVariable, AffineTransformable):
         for union, count in new_unions.items():
             for _ in range(count):
                 combined_unions.append(union.apply_affine(count, 0.0))
-        new_rvs = list(new_vars.values()) + combined_unions
+        new_rvs: list[GaussianVariable | RealConstant] = []
+        new_rvs.extend(list(new_vars.values()) + combined_unions)
         if constant_val != 0.0 or not new_rvs:
             new_rvs.append(RealConstant(constant_val))
         return GaussianSum(frozenset(new_rvs))

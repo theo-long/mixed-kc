@@ -16,6 +16,7 @@ class ObservationWeights:
     likelihood: LikelihoodType
     gaussian_obs_coefficients: list[dict[int, float]] = field(default_factory=list)
     gaussian_obs_values: list[float] = field(default_factory=list)
+    truncated_gaussian_obs: int = 0
 
     @property
     def scope(self) -> set[int]:
@@ -32,11 +33,20 @@ class ObservationWeights:
             self.likelihood * other.likelihood,  # type: ignore
             self.gaussian_obs_coefficients + other.gaussian_obs_coefficients,
             self.gaussian_obs_values + other.gaussian_obs_values,
+            self.truncated_gaussian_obs + other.truncated_gaussian_obs,
         )
 
     def __add__(self, other: "ObservationWeights"):
         if len(self.scope) + len(other.scope) == 0:
-            return ObservationWeights(self.likelihood + other.likelihood)  # type: ignore
+            if self.truncated_gaussian_obs < other.truncated_gaussian_obs:
+                return self
+            elif other.truncated_gaussian_obs < self.truncated_gaussian_obs:
+                return other
+            else:
+                return ObservationWeights(
+                    self.likelihood + other.likelihood,  # type: ignore
+                    truncated_gaussian_obs=self.truncated_gaussian_obs,
+                )
         else:
             raise ValueError("Cannot add weights with observations")
 
@@ -63,8 +73,8 @@ def _get_observation_likelihood(
 ) -> GradedLikelihoodType | None:
     if observation.likelihood == 0:
         return None
-
     log_likelihood = np.log(observation.likelihood).item()  # type: ignore
+    n_obs = observation.truncated_gaussian_obs
     if observation.gaussian_obs_coefficients:
         assert observation.gaussian_obs_values
         scope_map = {s: i for i, s in enumerate(observation.scope)}
@@ -79,9 +89,7 @@ def _get_observation_likelihood(
         if log_score is None:
             return None
         log_likelihood += log_score
-        n_obs = np.linalg.matrix_rank(A)
-    else:
-        n_obs = 0
+        n_obs += np.linalg.matrix_rank(A)
 
     return GradedLikelihoodType(log_likelihood, n_obs)
 
