@@ -27,13 +27,13 @@ class ObservationWeights:
         return f"Obs(likelihood={self.likelihood}, n_obs={len(self.scope)})"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
-        if self.gaussian_obs_A and other.gaussian_obs_A:
+        if self.gaussian_obs_A is not None and other.gaussian_obs_A is not None:
             assert self.gaussian_obs_b is not None and other.gaussian_obs_b is not None
             gaussian_obs_A = np.stack(
                 [self.gaussian_obs_A, other.gaussian_obs_A], axis=-1
             )
             gaussian_obs_b = np.concatenate([self.gaussian_obs_b, other.gaussian_obs_b])
-        elif self.gaussian_obs_A:
+        elif self.gaussian_obs_A is not None:
             gaussian_obs_A, gaussian_obs_b = self.gaussian_obs_A, self.gaussian_obs_b
         else:
             gaussian_obs_A, gaussian_obs_b = other.gaussian_obs_A, other.gaussian_obs_b
