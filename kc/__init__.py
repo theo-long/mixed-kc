@@ -1,3 +1,4 @@
+from . import dsl
 from .config import settings
 from .inference import run_kc
 from .real_values import (
@@ -17,8 +18,6 @@ from .terms import (
     ObserveReal,
     Var,
 )
-
-from . import dsl
 
 __all__ = [
     "settings",
