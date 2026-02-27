@@ -62,6 +62,9 @@ class LatentState:
     def initial_state(cls, n: int) -> "LatentState":
         return cls(cov=np.eye(n), mu=np.zeros((n, 1)), log_likelihood=1.0)
 
+    def copy(self):
+        return LatentState(self.cov, self.mu, self.log_likelihood)
+
 
 def _update_latent_with_observation(
     observation: ObservationWeights, state: LatentState
@@ -178,9 +181,9 @@ class Product(Node):
     def compute_log_likelihood(self, state: LatentState):
         log_likelihood = None
         for child in self.children:
-            increment = child.compute_log_likelihood(state)
+            increment = child.compute_log_likelihood(state.copy())
             if log_likelihood is None:
-                log_likelihood = None
+                log_likelihood = increment
             elif increment is None:
                 continue
             else:
@@ -214,7 +217,7 @@ class Sum(Node):
         log_likelihood = GradedLikelihoodType(1.0, 0)
         nonzero = False
         for child in self.children:
-            log_likelihood_update = child.compute_log_likelihood(state)
+            log_likelihood_update = child.compute_log_likelihood(state.copy())
             if log_likelihood_update:
                 nonzero = True
                 log_likelihood += log_likelihood_update
