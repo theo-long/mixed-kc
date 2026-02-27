@@ -179,15 +179,13 @@ class Product(Node):
         return True
 
     def compute_log_likelihood(self, state: LatentState):
-        log_likelihood = None
+        log_likelihood = GradedLikelihoodType(0.0, 0)
         for child in self.children:
             increment = child.compute_log_likelihood(state.copy())
-            if log_likelihood is None:
-                log_likelihood = increment
-            elif increment is None:
-                continue
-            else:
-                log_likelihood += increment
+            if increment is None:
+                # If anything is None i.e. p=0 in product, whole product is p=0
+                return None
+            log_likelihood = log_likelihood * increment
         return log_likelihood
 
     def _tree_str(self, prefix="", is_last=True):
@@ -214,14 +212,13 @@ class Sum(Node):
         return set.union(*[c.scope for c in self.children])
 
     def compute_log_likelihood(self, state: LatentState):  # type: ignore
-        log_likelihood = GradedLikelihoodType(1.0, 0)
-        nonzero = False
+        log_likelihood = None
         for child in self.children:
             log_likelihood_update = child.compute_log_likelihood(state.copy())
-            if log_likelihood_update:
-                nonzero = True
-                log_likelihood += log_likelihood_update
-        return log_likelihood if nonzero else None
+            # If update has p=0, we can just ignore it in sum
+            if log_likelihood_update is not None:
+                log_likelihood = log_likelihood + log_likelihood_update
+        return log_likelihood
 
     def _tree_str(self, prefix="", is_last=True):
         res = ""

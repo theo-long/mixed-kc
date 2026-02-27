@@ -55,8 +55,8 @@ class GradedLikelihoodType:
     log_likelihood: LikelihoodType
     n_obs: int
 
-    def __add__(self, other: "GradedLikelihoodType"):
-        if self.n_obs < other.n_obs:
+    def __add__(self, other: "GradedLikelihoodType | None"):
+        if other is None or self.n_obs < other.n_obs:
             return self
         elif other.n_obs < self.n_obs:
             return other
@@ -66,6 +66,12 @@ class GradedLikelihoodType:
             ).item()  # type: ignore
             return GradedLikelihoodType(log_likelihood, self.n_obs)
 
+    def __radd__(self, other: "GradedLikelihoodType | None"):
+        return self.__add__(other)
+
     def __mul__(self, other: "GradedLikelihoodType"):
         log_likelihood = self.log_likelihood + other.log_likelihood  # type: ignore
         return GradedLikelihoodType(log_likelihood, self.n_obs + other.n_obs)
+
+    def __rmul__(self, other: "GradedLikelihoodType"):
+        return other.__mul__(self)
