@@ -2,11 +2,9 @@ import itertools
 from collections import defaultdict
 
 import dd.autoref as _bdd
-import sympy
 
 from kc.real_values import (
     DistributionWithDensity,
-    DistributionWithMoments,
     Gaussian,
     GaussianVariable,
 )
@@ -61,7 +59,7 @@ class KCState(RandomVariableCounter):
                 ObservationWeights,
             ],
         ] = {}
-        self.priors: dict[sympy.Symbol, DistributionWithMoments] = {}
+        self.beta_priors: dict[int, tuple[float, float]] = {}
         self._observes_all_hold = self.bdd.true
         self.truncations = preprocess_state.truncation_counter.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)

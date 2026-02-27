@@ -9,21 +9,16 @@ from kc.real_values import GaussianSum, GaussianVariable, RealConstant
 from kc.spn import Node
 from kc.state import KCState, PreprocessState
 from kc.terms import EnumResult
-from kc.types import get_degree, get_float_value
+from kc.types import get_degree
 
 
 def compute_spn_likelihood(spn: Node, state: KCState) -> float:
-    graded_log_likelihood = spn.compute_log_likelihood()
+    graded_log_likelihood = spn.compute_log_likelihood(state.beta_priors)
     if graded_log_likelihood is None:
         return 0.0
     if settings.debug:
         print("Log likelihood pre-simplification:", graded_log_likelihood)
-    likelihood = get_float_value(
-        np.exp(graded_log_likelihood.log_likelihood),  # type: ignore
-        state.priors,
-    )
-    likelihood = get_float_value(likelihood, {})
-    return likelihood
+    return np.exp(graded_log_likelihood.log_likelihood)
 
 
 def preprocess(expr: PExpr):

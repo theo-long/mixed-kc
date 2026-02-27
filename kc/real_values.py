@@ -8,7 +8,6 @@ from functools import reduce
 from typing import TYPE_CHECKING, Any, Self
 
 import dd.autoref as _bdd
-import sympy
 from scipy.stats import beta, norm
 
 from kc.base import AExpr, PExpr
@@ -58,10 +57,9 @@ class Beta(AExpr, DistributionWithMoments, DistributionWithDensity):
         return
 
     def kc(self, env, state):
-        flip_param_id = state.next_flip_param()
-        symbol = sympy.symbols(f"p{flip_param_id}")
-        state.priors[symbol] = self
-        return symbol
+        var = state.next_variable(self)
+        state.beta_priors[var] = self.alpha, self.beta
+        return BetaVariable(var)
 
 
 @dataclass
@@ -270,7 +268,9 @@ class TruncatableGaussianVariable(GaussianVariable, RealVariable, Truncatable):
 
         inequality_clause = state.bdd.true
         if lower != float("-inf"):
-            inequality_clause = self.get_inequality_expr(lower * self.scale + self.shift, state, ">")
+            inequality_clause = self.get_inequality_expr(
+                lower * self.scale + self.shift, state, ">"
+            )
         if upper != float("inf"):
             inequality_clause = inequality_clause & self.get_inequality_expr(
                 upper * self.scale + self.shift, state, ">="
@@ -294,6 +294,9 @@ class TruncatableGaussianVariable(GaussianVariable, RealVariable, Truncatable):
 @dataclass(eq=True, frozen=True)
 class BetaVariable(RealVariable):
     var: int
+
+    def get_observe_expr(self, val, state) -> _bdd.Function:
+        raise NotImplementedError
 
     def preprocess(self, env, state):
         return self

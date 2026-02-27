@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Sequence
 
 from kc.base import AExpr, PExpr
 from kc.real_values import (
+    BetaVariable,
     RealValue,
     Truncatable,
     TruncatableGaussianVariable,
@@ -126,13 +127,22 @@ class Flip(PExpr):
         flip_id = state.next_flip()
         state.bdd.declare(f"flip_{flip_id}")
         if isinstance(self.prob, (float, int)):
-            prob_val = self.prob
+            pos, neg = (
+                ObservationWeights(self.prob),
+                ObservationWeights(1.0 - self.prob),
+            )
         else:
             prob_val = self.prob.kc(env, state)
+            if not isinstance(prob_val, BetaVariable):
+                raise ValueError("Can only set Flip prob to float or Beta expression")
+            pos, neg = (
+                ObservationWeights(1.0, beta_counts={prob_val.var: (1, 0)}),
+                ObservationWeights(1.0, beta_counts={prob_val.var: (0, 1)}),
+            )
         state.set_weight(
             f"flip_{flip_id}",
-            ObservationWeights(prob_val),
-            ObservationWeights(1.0 - prob_val),
+            pos,
+            neg,
         )
         return state.bdd.var(f"flip_{flip_id}")
 

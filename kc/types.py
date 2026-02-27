@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 epsilon = sympy.Symbol("epsilon")
 
-LikelihoodType = int | float | sympy.Expr
+LikelihoodType = int | float
 PosteriorUpdateType = NDArray
 WeightType = PosteriorUpdateType | LikelihoodType
 

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Callable
 
+from scipy.special import betaln, gammaln
 import numpy as np
 
 from kc.gaussian_math import log_score_singular
@@ -16,6 +17,7 @@ class ObservationWeights:
     likelihood: LikelihoodType
     gaussian_obs_coefficients: list[dict[int, float]] = field(default_factory=list)
     gaussian_obs_values: list[float] = field(default_factory=list)
+    beta_counts: dict[int, tuple[int, int]] = field(default_factory=dict)
     truncated_gaussian_obs: int = 0
 
     @property
@@ -23,25 +25,40 @@ class ObservationWeights:
         scope = set()
         for obs_vector in self.gaussian_obs_coefficients:
             scope |= obs_vector.keys()
+        scope |= self.beta_counts.keys()
         return scope
 
     def __str__(self):
         return f"Obs(likelihood={self.likelihood}, n_obs={len(self.scope)}, trunc_obs={self.truncated_gaussian_obs})"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
+        beta_counts = self.beta_counts
+        for var, (other_true_count, other_false_count) in other.beta_counts.items():
+            true_count, false_count = beta_counts.get(var, (0, 0))
+            beta_counts[var] = (
+                true_count + other_true_count,
+                false_count + other_false_count,
+            )
         return ObservationWeights(
             self.likelihood * other.likelihood,  # type: ignore
             self.gaussian_obs_coefficients + other.gaussian_obs_coefficients,
             self.gaussian_obs_values + other.gaussian_obs_values,
+            beta_counts,
             self.truncated_gaussian_obs + other.truncated_gaussian_obs,
         )
 
     def __add__(self, other: "ObservationWeights"):
         if len(self.scope) + len(other.scope) == 0:
             # Prefer the one with fewer obs *if* it has likelihood > 0
-            if self.truncated_gaussian_obs < other.truncated_gaussian_obs and self.likelihood:
+            if (
+                self.truncated_gaussian_obs < other.truncated_gaussian_obs
+                and self.likelihood
+            ):
                 return self
-            elif other.truncated_gaussian_obs < self.truncated_gaussian_obs and other.likelihood:
+            elif (
+                other.truncated_gaussian_obs < self.truncated_gaussian_obs
+                and other.likelihood
+            ):
                 return other
             else:
                 return ObservationWeights(
@@ -49,6 +66,7 @@ class ObservationWeights:
                     truncated_gaussian_obs=self.truncated_gaussian_obs,
                 )
         else:
+            # TODO: technically we could if everything had *the same* set of observations (or equivalent set)
             raise ValueError("Cannot add weights with observations")
 
 
@@ -69,28 +87,57 @@ def _build_gaussian_observation_matrix(
     return A, b
 
 
+def _get_gaussian_observation_likelihood_update(observation: ObservationWeights):
+    assert observation.gaussian_obs_values
+    assert observation.gaussian_obs_coefficients
+    scope_map = {s: i for i, s in enumerate(observation.scope)}
+    dim = len(observation.scope)
+    A, b = _build_gaussian_observation_matrix(
+        dim,
+        scope_map,
+        observation.gaussian_obs_coefficients,
+        observation.gaussian_obs_values,
+    )
+    log_score = log_score_singular(np.zeros((dim, 1)), np.eye(dim), A, b)
+    if log_score is None:
+        return None, 0
+    return log_score, np.linalg.matrix_rank(A)
+
+
+def _get_beta_observation_likelihood_update(
+    observation: ObservationWeights, beta_priors: dict[int, tuple[float, float]]
+) -> float:
+    log_likelihood = 0
+    for var, (s, f) in observation.beta_counts.items():
+        alpha, beta = beta_priors[var]
+        n = s + f
+        
+        # Log of the combination: ln(n!) - ln(s!) - ln(f!)
+        log_likelihood += gammaln(n + 1) - (gammaln(s + 1) + gammaln(f + 1))
+        
+        # Log of the Beta ratio
+        log_likelihood += betaln(s + alpha, f + beta) - betaln(alpha, beta)
+    
+    return log_likelihood
+
+
 def _get_observation_likelihood(
-    observation: ObservationWeights,
+    observation: ObservationWeights, beta_priors: dict[int, tuple[float, float]]
 ) -> GradedLikelihoodType | None:
     if observation.likelihood == 0:
         return None
     log_likelihood = np.log(observation.likelihood).item()  # type: ignore
     n_obs = observation.truncated_gaussian_obs
     if observation.gaussian_obs_coefficients:
-        assert observation.gaussian_obs_values
-        scope_map = {s: i for i, s in enumerate(observation.scope)}
-        dim = len(observation.scope)
-        A, b = _build_gaussian_observation_matrix(
-            dim,
-            scope_map,
-            observation.gaussian_obs_coefficients,
-            observation.gaussian_obs_values,
-        )
-        log_score = log_score_singular(np.zeros((dim, 1)), np.eye(dim), A, b)
+        log_score, new_obs = _get_gaussian_observation_likelihood_update(observation)
         if log_score is None:
             return None
         log_likelihood += log_score
-        n_obs += np.linalg.matrix_rank(A)
+        n_obs += new_obs
+
+    if observation.beta_counts:
+        log_score = _get_beta_observation_likelihood_update(observation, beta_priors)
+        log_likelihood += log_score
 
     return GradedLikelihoodType(log_likelihood, n_obs)
 
@@ -111,7 +158,7 @@ class Node(ABC):
 
     @abstractmethod
     def compute_log_likelihood(
-        self,
+        self, beta_priors: dict[int, tuple[float, float]]
     ) -> GradedLikelihoodType | None: ...
 
     @abstractmethod
@@ -153,8 +200,10 @@ class WeightNode(Node):
     def scope(self):
         return self.weight.scope
 
-    def compute_log_likelihood(self) -> GradedLikelihoodType | None:
-        return _get_observation_likelihood(self.weight)
+    def compute_log_likelihood(
+        self, beta_priors: dict[int, tuple[float, float]]
+    ) -> GradedLikelihoodType | None:
+        return _get_observation_likelihood(self.weight, beta_priors)
 
     def _tree_str(self, prefix="", is_last=True):
         res = ""
@@ -181,10 +230,10 @@ class Product(Node):
                 return False
         return True
 
-    def compute_log_likelihood(self):
+    def compute_log_likelihood(self, beta_priors: dict[int, tuple[float, float]]):
         log_likelihood = GradedLikelihoodType(0.0, 0)
         for child in self.children:
-            increment = child.compute_log_likelihood()
+            increment = child.compute_log_likelihood(beta_priors)
             if increment is None:
                 # If anything is None i.e. p=0 in product, whole product is p=0
                 return None
@@ -214,10 +263,10 @@ class Sum(Node):
     def scope(self):
         return set.union(*[c.scope for c in self.children])
 
-    def compute_log_likelihood(self):  # type: ignore
+    def compute_log_likelihood(self, beta_priors: dict[int, tuple[float, float]]):  # type: ignore
         log_likelihood = None
         for child in self.children:
-            log_likelihood_update = child.compute_log_likelihood()
+            log_likelihood_update = child.compute_log_likelihood(beta_priors)
             # If update has p=0, we can just ignore it in sum
             if log_likelihood_update is not None:
                 log_likelihood = log_likelihood + log_likelihood_update
