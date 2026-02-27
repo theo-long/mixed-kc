@@ -15,6 +15,7 @@ from kc.types import get_degree, get_float_value
 def compute_spn_likelihood(spn: Node, state: KCState) -> float:
     latent = LatentState.initial_state(state.gaussian_count)
     graded_log_likelihood = spn.compute_log_likelihood(latent)
+    from IPython import embed; embed()
     if graded_log_likelihood is None:
         return 0.0
 

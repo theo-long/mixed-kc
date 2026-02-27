@@ -22,7 +22,10 @@ class ObservationWeights:
     def scope(self) -> set[int]:
         if self.gaussian_obs_A is None:
             return set()
-        return set(self.gaussian_obs_A.nonzero()[1].astype(int))
+        return set(self.gaussian_obs_A.nonzero()[1].tolist())
+
+    def __str__(self):
+        return f"Obs(likelihood={self.likelihood}, n_obs={len(self.scope)})"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
         if self.gaussian_obs_A and other.gaussian_obs_A:
@@ -100,6 +103,12 @@ class Node(ABC):
         self, state: LatentState
     ) -> GradedLikelihoodType | None: ...
 
+    @abstractmethod
+    def _tree_str(self, prefix="", is_last=True) -> str: ...
+
+    def __str__(self):
+        return self._tree_str(prefix="", is_last=True).replace("└── ", "", 1).strip()
+
     def __add__(self, other) -> "Sum | WeightNode":
         registry_key = (type(self), type(other))
         func = self.ADD_OPS.get(registry_key)
@@ -141,6 +150,13 @@ class WeightNode(Node):
         rank: int = np.linalg.matrix_rank(latent.cov).item()
         return GradedLikelihoodType(latent.log_likelihood, latent.cov.shape[0] - rank)
 
+    def _tree_str(self, prefix="", is_last=True):
+        res = ""
+        connector = "└── " if is_last else "├── "
+        node_str = f"Weight({self.weight})"
+        res += f"{prefix}{connector}{node_str}\n"
+        return res
+
 
 class Product(Node):
     def __init__(self, *children: Node) -> None:
@@ -171,6 +187,19 @@ class Product(Node):
                 log_likelihood += increment
         return log_likelihood
 
+    def _tree_str(self, prefix="", is_last=True):
+        res = ""
+        connector = "└── " if is_last else "├── "
+
+        node_str = f"Product({self.scope})"
+        res += f"{prefix}{connector}{node_str}\n"
+
+        new_prefix = prefix + ("    " if is_last else "│   ")
+        for i, child in enumerate(self.children):
+            child_is_last = i == len(self.children) - 1
+            res += child._tree_str(new_prefix, child_is_last)
+        return res
+
 
 class Sum(Node):
     def __init__(self, *children: Node) -> None:
@@ -190,6 +219,19 @@ class Sum(Node):
                 nonzero = True
                 log_likelihood += log_likelihood_update
         return log_likelihood if nonzero else None
+
+    def _tree_str(self, prefix="", is_last=True):
+        res = ""
+        connector = "└── " if is_last else "├── "
+
+        node_str = f"Sum({self.scope})"
+        res += f"{prefix}{connector}{node_str}\n"
+
+        new_prefix = prefix + ("    " if is_last else "│   ")
+        for i, child in enumerate(self.children):
+            child_is_last = i == len(self.children) - 1
+            res += child._tree_str(new_prefix, child_is_last)
+        return res
 
 
 def _add_sum_sum(a: Sum, b: Sum):
