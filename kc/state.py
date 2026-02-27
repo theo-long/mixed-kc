@@ -29,7 +29,7 @@ from kc.types import (
 
 class RandomVariableCounter:
     def __init__(self) -> None:
-        self.rv_counter = -1 # Start at -1 so first return is 0
+        self.rv_counter = -1  # Start at -1 so first return is 0
         self.rvs: dict[int, DistributionWithDensity] = {}
 
     def next_variable(self, rv: DistributionWithDensity):
@@ -169,10 +169,9 @@ class KCState(RandomVariableCounter):
 
         node_name = self._get_symbolic_observe_eq_node_name(new_vars, val)
         self.bdd.declare(node_name)
-        A, b = self.create_observation_Ab(new_vars, val)
         self.set_weight(
             node_name,
-            ObservationWeights(1.0, A, b),
+            ObservationWeights(1.0, [{v.var: v.scale for v in new_vars}], [val]),
             ObservationWeights(1.0),
         )
         return self.bdd.var(node_name)

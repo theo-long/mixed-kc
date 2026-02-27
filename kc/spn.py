@@ -2,46 +2,36 @@
 
 import itertools
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
 
-from kc.gaussian_math import get_gaussian_posterior, log_score_singular
+from kc.gaussian_math import log_score_singular
 from kc.types import GradedLikelihoodType, LikelihoodType
 
 
 @dataclass
 class ObservationWeights:
     likelihood: LikelihoodType
-    gaussian_obs_A: np.ndarray | None = None
-    gaussian_obs_b: np.ndarray | None = None
+    gaussian_obs_coefficients: list[dict[int, float]] = field(default_factory=list)
+    gaussian_obs_values: list[float] = field(default_factory=list)
 
     @property
     def scope(self) -> set[int]:
-        if self.gaussian_obs_A is None:
-            return set()
-        return set(self.gaussian_obs_A.nonzero()[1].tolist())
+        scope = set()
+        for obs_vector in self.gaussian_obs_coefficients:
+            scope |= obs_vector.keys()
+        return scope
 
     def __str__(self):
         return f"Obs(likelihood={self.likelihood}, n_obs={len(self.scope)})"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
-        if self.gaussian_obs_A is not None and other.gaussian_obs_A is not None:
-            assert self.gaussian_obs_b is not None and other.gaussian_obs_b is not None
-            gaussian_obs_A = np.concatenate(
-                [self.gaussian_obs_A, other.gaussian_obs_A], axis=0
-            )
-            gaussian_obs_b = np.concatenate([self.gaussian_obs_b, other.gaussian_obs_b])
-        elif self.gaussian_obs_A is not None:
-            gaussian_obs_A, gaussian_obs_b = self.gaussian_obs_A, self.gaussian_obs_b
-        else:
-            gaussian_obs_A, gaussian_obs_b = other.gaussian_obs_A, other.gaussian_obs_b
-
         return ObservationWeights(
             self.likelihood * other.likelihood,  # type: ignore
-            gaussian_obs_A,
-            gaussian_obs_b,
+            self.gaussian_obs_coefficients + other.gaussian_obs_coefficients,
+            self.gaussian_obs_values + other.gaussian_obs_values,
         )
 
     def __add__(self, other: "ObservationWeights"):
@@ -51,43 +41,49 @@ class ObservationWeights:
             raise ValueError("Cannot add weights with observations")
 
 
-@dataclass(frozen=True)
-class LatentState:
-    cov: np.ndarray
-    mu: np.ndarray
-    log_likelihood: LikelihoodType
+def _build_gaussian_observation_matrix(
+    dim: int,
+    scope_map: dict[int, int],
+    gaussian_obs_coefficients: list[dict[int, float]],
+    gaussian_obs_values: list[float],
+) -> tuple[np.ndarray, np.ndarray]:
+    A = np.zeros((len(gaussian_obs_coefficients), dim))
+    b = np.array(gaussian_obs_values)
 
-    @classmethod
-    def initial_state(cls, n: int) -> "LatentState":
-        return cls(cov=np.eye(n), mu=np.zeros((n, 1)), log_likelihood=0.0)
+    for i, vector in enumerate(gaussian_obs_coefficients):
+        for gaussian_var, val in vector.items():
+            j = scope_map[gaussian_var]
+            A[i, j] = val
 
-    def copy(self):
-        return LatentState(self.cov, self.mu, self.log_likelihood)
+    return A, b
 
 
-def _update_latent_with_observation(
-    observation: ObservationWeights, state: LatentState
-) -> LatentState | None:
+def _get_observation_likelihood(
+    observation: ObservationWeights,
+) -> GradedLikelihoodType | None:
     if observation.likelihood == 0:
         return None
 
-    log_likelihood = state.log_likelihood + np.log(observation.likelihood).item()  # type: ignore
-    if observation.gaussian_obs_A is not None:
-        assert observation.gaussian_obs_b is not None
-        log_score = log_score_singular(
-            state.mu, state.cov, observation.gaussian_obs_A, observation.gaussian_obs_b
+    log_likelihood = np.log(observation.likelihood).item()  # type: ignore
+    if observation.gaussian_obs_coefficients:
+        assert observation.gaussian_obs_values
+        scope_map = {s: i for i, s in enumerate(observation.scope)}
+        dim = len(observation.scope)
+        A, b = _build_gaussian_observation_matrix(
+            dim,
+            scope_map,
+            observation.gaussian_obs_coefficients,
+            observation.gaussian_obs_values,
         )
+        log_score = log_score_singular(np.zeros((dim, 1)), np.eye(dim), A, b)
         if log_score is None:
-            # Impossible observation
             return None
         log_likelihood += log_score
-        new_mu, new_cov = get_gaussian_posterior(
-            state.mu, state.cov, observation.gaussian_obs_A, observation.gaussian_obs_b
-        )
+        n_obs = np.linalg.matrix_rank(A)
     else:
-        new_mu, new_cov = state.mu, state.cov
+        n_obs = 0
 
-    return LatentState(new_cov, new_mu, log_likelihood)
+    return GradedLikelihoodType(log_likelihood, n_obs)
 
 
 class Node(ABC):
@@ -106,7 +102,7 @@ class Node(ABC):
 
     @abstractmethod
     def compute_log_likelihood(
-        self, state: LatentState
+        self,
     ) -> GradedLikelihoodType | None: ...
 
     @abstractmethod
@@ -148,17 +144,8 @@ class WeightNode(Node):
     def scope(self):
         return self.weight.scope
 
-    def compute_log_likelihood(self, state: LatentState) -> GradedLikelihoodType | None:
-        latent = _update_latent_with_observation(self.weight, state)
-        if latent is None:
-            return None
-
-        rank: int
-        if latent.cov.shape[0] > 0:
-            rank = np.linalg.matrix_rank(latent.cov).item()
-        else:
-            rank = 0
-        return GradedLikelihoodType(latent.log_likelihood, latent.cov.shape[0] - rank)
+    def compute_log_likelihood(self) -> GradedLikelihoodType | None:
+        return _get_observation_likelihood(self.weight)
 
     def _tree_str(self, prefix="", is_last=True):
         res = ""
@@ -185,10 +172,10 @@ class Product(Node):
                 return False
         return True
 
-    def compute_log_likelihood(self, state: LatentState):
+    def compute_log_likelihood(self):
         log_likelihood = GradedLikelihoodType(0.0, 0)
         for child in self.children:
-            increment = child.compute_log_likelihood(state.copy())
+            increment = child.compute_log_likelihood()
             if increment is None:
                 # If anything is None i.e. p=0 in product, whole product is p=0
                 return None
@@ -218,10 +205,10 @@ class Sum(Node):
     def scope(self):
         return set.union(*[c.scope for c in self.children])
 
-    def compute_log_likelihood(self, state: LatentState):  # type: ignore
+    def compute_log_likelihood(self):  # type: ignore
         log_likelihood = None
         for child in self.children:
-            log_likelihood_update = child.compute_log_likelihood(state.copy())
+            log_likelihood_update = child.compute_log_likelihood()
             # If update has p=0, we can just ignore it in sum
             if log_likelihood_update is not None:
                 log_likelihood = log_likelihood + log_likelihood_update

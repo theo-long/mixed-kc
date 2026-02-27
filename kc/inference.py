@@ -6,15 +6,14 @@ from kc.config import settings
 from kc.gaussian_math import get_expr_distribution
 from kc.model_count import model_count
 from kc.real_values import GaussianSum, GaussianVariable, RealConstant
-from kc.spn import LatentState, Node
+from kc.spn import Node
 from kc.state import KCState, PreprocessState
 from kc.terms import EnumResult
 from kc.types import get_degree, get_float_value
 
 
 def compute_spn_likelihood(spn: Node, state: KCState) -> float:
-    latent = LatentState.initial_state(state.gaussian_count)
-    graded_log_likelihood = spn.compute_log_likelihood(latent)
+    graded_log_likelihood = spn.compute_log_likelihood()
     if graded_log_likelihood is None:
         return 0.0
     if settings.debug:
