@@ -74,9 +74,13 @@ def _update_latent_with_observation(
     log_likelihood = state.log_likelihood + np.log(observation.likelihood).item()  # type: ignore
     if observation.gaussian_obs_A is not None:
         assert observation.gaussian_obs_b is not None
-        log_likelihood += log_score_singular(
+        log_score = log_score_singular(
             state.mu, state.cov, observation.gaussian_obs_A, observation.gaussian_obs_b
         )
+        if log_score is None:
+            # Impossible observation
+            return None
+        log_likelihood += log_score
         new_mu, new_cov = get_gaussian_posterior(
             state.mu, state.cov, observation.gaussian_obs_A, observation.gaussian_obs_b
         )
