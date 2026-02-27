@@ -26,7 +26,7 @@ class ObservationWeights:
         return scope
 
     def __str__(self):
-        return f"Obs(likelihood={self.likelihood}, n_obs={len(self.scope)})"
+        return f"Obs(likelihood={self.likelihood}, n_obs={len(self.scope)}, trunc_obs={self.truncated_gaussian_obs})"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
         return ObservationWeights(
@@ -38,9 +38,10 @@ class ObservationWeights:
 
     def __add__(self, other: "ObservationWeights"):
         if len(self.scope) + len(other.scope) == 0:
-            if self.truncated_gaussian_obs < other.truncated_gaussian_obs:
+            # Prefer the one with fewer obs *if* it has likelihood > 0
+            if self.truncated_gaussian_obs < other.truncated_gaussian_obs and self.likelihood:
                 return self
-            elif other.truncated_gaussian_obs < self.truncated_gaussian_obs:
+            elif other.truncated_gaussian_obs < self.truncated_gaussian_obs and other.likelihood:
                 return other
             else:
                 return ObservationWeights(
