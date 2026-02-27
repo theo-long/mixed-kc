@@ -29,7 +29,7 @@ from kc.types import (
 
 class RandomVariableCounter:
     def __init__(self) -> None:
-        self.rv_counter = 0
+        self.rv_counter = -1 # Start at -1 so first return is 0
         self.rvs: dict[int, DistributionWithDensity] = {}
 
     def next_variable(self, rv: DistributionWithDensity):
@@ -142,8 +142,8 @@ class KCState(RandomVariableCounter):
         """Create a numpy array representing observation A x = b"""
         v = np.zeros((1, self.gaussian_count))
         for var in vars:
-            v[var.var] = var.scale
-        return np.array([val])
+            v[0, var.var] = var.scale
+        return v, np.array([val])
 
     def get_gaussian_sum_symbolic_observe_expression(
         self,
@@ -250,7 +250,7 @@ class KCState(RandomVariableCounter):
             weight /= scale
         self.set_weight(
             equality_node_name,
-            weight,
+            ObservationWeights(weight),
             ObservationWeights(1.0),
         )
         self.bdd_equality_nodes[var].add(equality_node_name)
