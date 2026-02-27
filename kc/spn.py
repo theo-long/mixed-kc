@@ -6,10 +6,9 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
-from scipy.special import logsumexp
 
 from kc.gaussian_math import get_gaussian_posterior, log_score_singular
-from kc.types import LikelihoodType, GradedLikelihoodType
+from kc.types import GradedLikelihoodType, LikelihoodType
 
 
 @dataclass
@@ -60,7 +59,7 @@ class LatentState:
 
     @classmethod
     def initial_state(cls, n: int) -> "LatentState":
-        return cls(cov=np.eye(n), mu=np.zeros((n, 1)), log_likelihood=1.0)
+        return cls(cov=np.eye(n), mu=np.zeros((n, 1)), log_likelihood=0.0)
 
     def copy(self):
         return LatentState(self.cov, self.mu, self.log_likelihood)

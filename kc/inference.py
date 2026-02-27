@@ -62,7 +62,7 @@ def binary_inference(val, state: KCState, normalizing_constant: float):
         val & state.observes_all_hold,
         state.weights,
     )
-    return compute_spn_likelihood(spn, state)
+    return compute_spn_likelihood(spn, state) / normalizing_constant
 
 
 def gaussian_inference(val, state, normalizing_constant, posterior_mixture):
