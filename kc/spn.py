@@ -29,10 +29,10 @@ class ObservationWeights:
         return scope
 
     def __str__(self):
-        return f"Obs(likelihood={self.likelihood}, n_obs={len(self.scope)}, trunc_obs={self.truncated_gaussian_obs})"
+        return f"Obs(likelihood={self.likelihood}, n_gaussian_obs={len(self.gaussian_obs_coefficients)}, trunc_obs={self.truncated_gaussian_obs}, scope={self.scope})"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
-        beta_counts = self.beta_counts
+        beta_counts = dict(self.beta_counts)
         for var, (other_true_count, other_false_count) in other.beta_counts.items():
             true_count, false_count = beta_counts.get(var, (0, 0))
             beta_counts[var] = (
@@ -111,13 +111,13 @@ def _get_beta_observation_likelihood_update(
     for var, (s, f) in observation.beta_counts.items():
         alpha, beta = beta_priors[var]
         n = s + f
-        
+
         # Log of the combination: ln(n!) - ln(s!) - ln(f!)
         log_likelihood += gammaln(n + 1) - (gammaln(s + 1) + gammaln(f + 1))
-        
+
         # Log of the Beta ratio
         log_likelihood += betaln(s + alpha, f + beta) - betaln(alpha, beta)
-    
+
     return log_likelihood
 
 

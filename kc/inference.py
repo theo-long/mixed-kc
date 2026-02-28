@@ -16,8 +16,6 @@ def compute_spn_likelihood(spn: Node, state: KCState) -> float:
     graded_log_likelihood = spn.compute_log_likelihood(state.beta_priors)
     if graded_log_likelihood is None:
         return 0.0
-    if settings.debug:
-        print("Log likelihood pre-simplification:", graded_log_likelihood)
     return np.exp(graded_log_likelihood.log_likelihood)
 
 
