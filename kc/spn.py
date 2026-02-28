@@ -5,8 +5,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Callable
 
-from scipy.special import betaln
 import numpy as np
+from scipy.special import betaln
 
 from kc.gaussian_math import log_score_singular
 from kc.types import GradedLikelihoodType, LikelihoodType
