@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Callable
 
-from scipy.special import betaln, gammaln
+from scipy.special import betaln
 import numpy as np
 
 from kc.gaussian_math import log_score_singular
@@ -29,7 +29,7 @@ class ObservationWeights:
         return scope
 
     def __str__(self):
-        return f"Obs(likelihood={self.likelihood}, n_gaussian_obs={len(self.gaussian_obs_coefficients)}, trunc_obs={self.truncated_gaussian_obs}, scope={self.scope})"
+        return f"Obs(likelihood={self.likelihood}, beta_counts={self.beta_counts}, n_gaussian_obs={len(self.gaussian_obs_coefficients)}, trunc_obs={self.truncated_gaussian_obs}, scope={self.scope})"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
         beta_counts = dict(self.beta_counts)
@@ -110,12 +110,8 @@ def _get_beta_observation_likelihood_update(
     log_likelihood = 0
     for var, (s, f) in observation.beta_counts.items():
         alpha, beta = beta_priors[var]
-        n = s + f
 
-        # Log of the combination: ln(n!) - ln(s!) - ln(f!)
-        log_likelihood += gammaln(n + 1) - (gammaln(s + 1) + gammaln(f + 1))
-
-        # Log of the Beta ratio
+        # Log of the Beta ratio (Probability of this specific sequence of flips)
         log_likelihood += betaln(s + alpha, f + beta) - betaln(alpha, beta)
 
     return log_likelihood
@@ -261,6 +257,8 @@ class Sum(Node):
 
     @property
     def scope(self):
+        if not self.children:
+            return set()
         return set.union(*[c.scope for c in self.children])
 
     def compute_log_likelihood(self, beta_priors: dict[int, tuple[float, float]]):  # type: ignore
