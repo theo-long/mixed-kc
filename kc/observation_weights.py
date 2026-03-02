@@ -5,7 +5,7 @@ from typing import Self
 import numpy as np
 from scipy.special import betaln
 
-from kc.gaussian_math import log_score_singular
+from kc.gaussian_math import get_gaussian_posterior, log_score_singular
 
 
 def _build_gaussian_observation_matrix(
@@ -63,10 +63,19 @@ class WeightType(ABC):
     @abstractmethod
     def get_likelihood(self, **kwargs) -> tuple[float | None, int]: ...
 
-    # @abstractmethod
-    # def get_posterior(
-    #     self, var: int, **kwargs
-    # ) -> tuple[tuple[float | None, int], Any]: ...
+    @abstractmethod
+    def get_posterior(self, var_selection: list[int], **kwargs) -> "Posterior": ...
+
+
+@dataclass
+class Posterior(ABC):
+    scope: list[int] = field(default_factory=list)
+
+
+@dataclass
+class GaussianPosterior(Posterior):
+    mu: np.typing.NDArray = field(default_factory=lambda: np.zeros((0)))
+    cov: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 0)))
 
 
 @dataclass
@@ -106,6 +115,36 @@ class GaussianWeight(WeightType):
             return None, 0
         return log_score, np.linalg.matrix_rank(A)
 
+    def get_posterior(self, var_selection: list[int], **kwargs) -> GaussianPosterior:
+        assert var_selection, "Cannot query empty set of vars"
+        assert all(var in self.scope for var in var_selection), (
+            "Can only query in-scope vars"
+        )
+
+        scope_map = {s: i for i, s in enumerate(self.scope)}
+        A, b = _build_gaussian_observation_matrix(
+            scope_map,
+            self.gaussian_obs_coefficients,
+            self.gaussian_obs_values,
+        )
+        mu, cov = get_gaussian_posterior(
+            np.zeros((len(scope_map), 1)), np.eye(len(scope_map)), A, b
+        )
+        indices = []
+        for var in var_selection:
+            indices.append(scope_map[var])
+        return GaussianPosterior(
+            var_selection,
+            mu[indices],
+            cov[indices, indices],
+        )
+
+
+@dataclass
+class BetaPosterior(Posterior):
+    alphas: list[float] = field(default_factory=list)
+    betas: list[float] = field(default_factory=list)
+
 
 @dataclass
 class BetaWeight(WeightType):
@@ -141,6 +180,22 @@ class BetaWeight(WeightType):
 
         return log_likelihood, 0
 
+    def get_posterior(self, var_selection: list[int], **kwargs) -> BetaPosterior:
+        assert var_selection, "Cannot query empty set of vars"
+        assert all(var in self.scope for var in var_selection), (
+            "Can only query in-scope vars"
+        )
+        priors: dict[int, tuple[float, float]] = kwargs["beta_priors"]
+        alphas: list[float] = []
+        betas: list[float] = []
+        for var in var_selection:
+            alpha, beta = priors[var]
+            succ, fail = self.beta_counts[var]
+            alphas.append(alpha + succ)
+            betas.append(beta + fail)
+
+        return BetaPosterior(var_selection, alphas, betas)
+
 
 # Note - conflicting TruncatedGaussian obs are handled inside the KCState class by directly constraining the BDD
 # This means we don't need to keep track of interactions and can simply directly compute likelihoods
@@ -160,6 +215,18 @@ class TruncatedGaussianWeight(WeightType):
 
     def get_likelihood(self, **kwargs):
         return 0.0, self.n_obs
+
+    def get_posterior(self, var_selection: list[int], **kwargs) -> Posterior:
+        raise NotImplementedError(
+            "No posterior inference for Truncated Gaussian variables"
+        )
+
+
+@dataclass
+class FullPosterior:
+    likelihood: GradedLikelihood
+    gaussian: GaussianPosterior
+    beta: BetaPosterior
 
 
 @dataclass
@@ -237,3 +304,31 @@ class ObservationWeights:
                 n_obs += obs_update
 
         return GradedLikelihood(log_likelihood, n_obs)
+
+    def get_posterior(self, var_selection: list[int], **kwargs) -> FullPosterior | None:
+        likelihood = self.get_likelihood(**kwargs)
+        if likelihood is None:
+            return likelihood
+
+        var_selection_set = set(var_selection)
+
+        gaussian_vars = self.gaussian_obs.scope & var_selection_set
+        if gaussian_vars:
+            gaussian_posterior = self.gaussian_obs.get_posterior(
+                list(gaussian_vars), **kwargs
+            )
+        else:
+            gaussian_posterior = GaussianPosterior()
+
+        beta_vars = self.beta_obs.scope & var_selection_set
+        if beta_vars:
+            beta_posterior = self.beta_obs.get_posterior(list(gaussian_vars), **kwargs)
+        else:
+            beta_posterior = BetaPosterior()
+
+        # Verify that we have queried all vars
+        assert var_selection_set == gaussian_vars | beta_vars, (
+            "Must get posterior for all vars"
+        )
+
+        return FullPosterior(likelihood, gaussian_posterior, beta_posterior)
