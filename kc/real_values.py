@@ -12,7 +12,11 @@ from scipy.stats import beta, norm
 
 from kc.base import AExpr, PExpr
 from kc.config import settings
-from kc.observation_weights import GaussianWeight, TruncatedGaussianWeight
+from kc.observation_weights import (
+    GaussianWeight,
+    ObservationWeights,
+    TruncatedGaussianWeight,
+)
 from kc.types import InequalityLiteral, inequality_flip_mapping
 
 if TYPE_CHECKING:
@@ -245,7 +249,9 @@ class TruncatableGaussianVariable(GaussianVariable, RealVariable, Truncatable):
             weight /= self.scale
         state.set_weight(
             equality_node_name,
-            TruncatedGaussianWeight(weight, 1),
+            ObservationWeights(
+                weight, truncated_gaussian_obs=TruncatedGaussianWeight(1)
+            ),
             1.0,
         )
         state.bdd_equality_nodes[self.var].add(equality_node_name)

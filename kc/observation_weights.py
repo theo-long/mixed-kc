@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
-from typing import Self
+from typing import Any, Self
 
 import numpy as np
 from scipy.special import betaln
@@ -63,6 +63,11 @@ class WeightType(ABC):
     @abstractmethod
     def get_likelihood(self, **kwargs) -> tuple[float | None, int]: ...
 
+    # @abstractmethod
+    # def get_posterior(
+    #     self, var: int, **kwargs
+    # ) -> tuple[tuple[float | None, int], Any]: ...
+
 
 @dataclass
 class GaussianWeight(WeightType):
@@ -86,7 +91,7 @@ class GaussianWeight(WeightType):
         )
 
     def get_likelihood(self, **kwargs):
-        if not self.gaussian_obs_values and self.gaussian_obs_coefficients:
+        if len(self.gaussian_obs_values) + len(self.gaussian_obs_coefficients) == 0:
             return (0.0, 0)
         scope_map = {s: i for i, s in enumerate(self.scope)}
         A, b = _build_gaussian_observation_matrix(
@@ -141,7 +146,6 @@ class BetaWeight(WeightType):
 # This means we don't need to keep track of interactions and can simply directly compute likelihoods
 @dataclass
 class TruncatedGaussianWeight(WeightType):
-    likelihood: float = 1.0
     n_obs: int = 0
 
     @property
@@ -149,17 +153,13 @@ class TruncatedGaussianWeight(WeightType):
         return set()
 
     def __mul__(self, other: "TruncatedGaussianWeight"):
-        return TruncatedGaussianWeight(
-            self.likelihood * other.likelihood, self.n_obs + other.n_obs
-        )
+        return TruncatedGaussianWeight(self.n_obs + other.n_obs)
 
     def __add__(self, other: "TruncatedGaussianWeight"):
-        return TruncatedGaussianWeight(
-            self.likelihood + other.likelihood, self.n_obs + other.n_obs
-        )
+        return TruncatedGaussianWeight(self.n_obs + other.n_obs)
 
     def get_likelihood(self, **kwargs):
-        return np.log(self.likelihood).item(), self.n_obs
+        return 0.0, self.n_obs
 
 
 @dataclass
@@ -174,7 +174,8 @@ class ObservationWeights:
     @property
     def scope(self) -> set[int]:
         scope = set()
-        for weight in fields(self):
+        for dataclass_field in fields(self):
+            weight = getattr(self, dataclass_field.name)
             if isinstance(weight, WeightType):
                 scope |= weight.scope
         return scope
@@ -194,7 +195,8 @@ class ObservationWeights:
 
     def __str__(self):
         rep_str = f"Obs(scope={self.scope}, likelihood={self.likelihood}"
-        for weight in fields(self):
+        for dataclass_field in fields(self):
+            weight = getattr(self, dataclass_field.name)
             if isinstance(weight, WeightType):
                 rep_str += ", "
                 rep_str += str(weight)
@@ -203,9 +205,9 @@ class ObservationWeights:
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
         return ObservationWeights(
             self.likelihood * other.likelihood,
-            self.gaussian_obs * self.gaussian_obs,
-            self.beta_obs * self.beta_obs,
-            self.truncated_gaussian_obs * self.truncated_gaussian_obs,
+            self.gaussian_obs * other.gaussian_obs,
+            self.beta_obs * other.beta_obs,
+            self.truncated_gaussian_obs * other.truncated_gaussian_obs,
         )
 
     def __add__(self, other: "ObservationWeights"):
@@ -225,7 +227,8 @@ class ObservationWeights:
             return None
 
         log_likelihood, n_obs = 0.0, 0
-        for weight in fields(self):
+        for dataclass_field in fields(self):
+            weight = getattr(self, dataclass_field.name)
             if isinstance(weight, WeightType):
                 log_likelihood_update, obs_update = weight.get_likelihood(**kwargs)
                 if log_likelihood_update is None:

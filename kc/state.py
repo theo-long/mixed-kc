@@ -140,13 +140,20 @@ class KCState(RandomVariableCounter):
     def set_weight(
         self,
         var,
-        pos_weight: int | float | WeightType,
-        neg_weight: int | float | WeightType,
+        pos_weight: int | float | WeightType | ObservationWeights,
+        neg_weight: int | float | WeightType | ObservationWeights,
     ):
-        self.weights[var] = (
-            ObservationWeights.from_weight(pos_weight),
-            ObservationWeights.from_weight(neg_weight),
+        pos_weight = (
+            pos_weight
+            if isinstance(pos_weight, ObservationWeights)
+            else ObservationWeights.from_weight(pos_weight)
         )
+        neg_weight = (
+            neg_weight
+            if isinstance(neg_weight, ObservationWeights)
+            else ObservationWeights.from_weight(neg_weight)
+        )
+        self.weights[var] = (pos_weight, neg_weight)
 
 
 def get_gaussian_var_name(gaussian: int):
