@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
-from typing import Any, Self
+from typing import Self
 
 import numpy as np
 from scipy.special import betaln
