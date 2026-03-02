@@ -61,7 +61,7 @@ class WeightType(ABC):
     def __mul__(self: Self, other) -> Self: ...
 
     @abstractmethod
-    def get_likelihood(self, **kwargs) -> tuple[float | None, int]: ...
+    def get_log_likelihood(self, **kwargs) -> tuple[float | None, int]: ...
 
     @abstractmethod
     def get_posterior(self, var_selection: list[int], **kwargs) -> "Posterior": ...
@@ -76,6 +76,14 @@ class Posterior(ABC):
 class GaussianPosterior(Posterior):
     mu: np.typing.NDArray = field(default_factory=lambda: np.zeros((0)))
     cov: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 0)))
+
+    def __mul__(self, other: "GaussianPosterior"):
+        assert not (set(self.scope) & set(other.scope)), (
+            "Cannot combine posteriors with overlapping scopes"
+        )
+        mu = np.concatenate((self.mu, other.mu), axis=0)
+        cov = np.block((self.cov, other.cov))
+        return GaussianPosterior(self.scope + other.scope, mu, cov)
 
 
 @dataclass
@@ -99,7 +107,7 @@ class GaussianWeight(WeightType):
             self.gaussian_obs_values + other.gaussian_obs_values,
         )
 
-    def get_likelihood(self, **kwargs):
+    def get_log_likelihood(self, **kwargs):
         if len(self.gaussian_obs_values) + len(self.gaussian_obs_coefficients) == 0:
             return (0.0, 0)
         scope_map = {s: i for i, s in enumerate(self.scope)}
@@ -145,6 +153,16 @@ class BetaPosterior(Posterior):
     alphas: list[float] = field(default_factory=list)
     betas: list[float] = field(default_factory=list)
 
+    def __mul__(self, other: "BetaPosterior"):
+        assert not (set(self.scope) & set(other.scope)), (
+            "Cannot combine posteriors with overlapping scopes"
+        )
+        return BetaPosterior(
+            self.scope + other.scope,
+            self.alphas + other.alphas,
+            self.betas + other.betas,
+        )
+
 
 @dataclass
 class BetaWeight(WeightType):
@@ -167,7 +185,7 @@ class BetaWeight(WeightType):
             )
         return BetaWeight(beta_counts)
 
-    def get_likelihood(self, **kwargs):
+    def get_log_likelihood(self, **kwargs):
         if not self.beta_counts:
             return 0.0, 0
         log_likelihood = 0
@@ -213,7 +231,7 @@ class TruncatedGaussianWeight(WeightType):
     def __add__(self, other: "TruncatedGaussianWeight"):
         return TruncatedGaussianWeight(self.n_obs + other.n_obs)
 
-    def get_likelihood(self, **kwargs):
+    def get_log_likelihood(self, **kwargs):
         return 0.0, self.n_obs
 
     def get_posterior(self, var_selection: list[int], **kwargs) -> Posterior:
@@ -225,8 +243,22 @@ class TruncatedGaussianWeight(WeightType):
 @dataclass
 class FullPosterior:
     likelihood: GradedLikelihood
-    gaussian: GaussianPosterior
-    beta: BetaPosterior
+    gaussian: GaussianPosterior = field(default_factory=GaussianPosterior)
+    beta: BetaPosterior = field(default_factory=BetaPosterior)
+
+    @property
+    def scope(self):
+        return self.gaussian.scope + self.beta.scope
+
+    def __mul__(self, other: "FullPosterior"):
+        assert not (set(self.scope) & set(other.scope)), (
+            "Cannot combine posteriors with overlapping scopes"
+        )
+        FullPosterior(
+            self.likelihood * other.likelihood,
+            self.gaussian * other.gaussian,
+            self.beta * other.beta,
+        )
 
 
 @dataclass
@@ -289,7 +321,7 @@ class ObservationWeights:
             # TODO: technically we could if everything had *the same* set of observations (or equivalent set)
             raise ValueError("Cannot add weights with observations")
 
-    def get_likelihood(self, **kwargs) -> GradedLikelihood | None:
+    def get_log_likelihood(self, **kwargs) -> GradedLikelihood | None:
         if self.likelihood == 0:
             return None
 
@@ -297,7 +329,7 @@ class ObservationWeights:
         for dataclass_field in fields(self):
             weight = getattr(self, dataclass_field.name)
             if isinstance(weight, WeightType):
-                log_likelihood_update, obs_update = weight.get_likelihood(**kwargs)
+                log_likelihood_update, obs_update = weight.get_log_likelihood(**kwargs)
                 if log_likelihood_update is None:
                     return None
                 log_likelihood += log_likelihood_update
@@ -306,7 +338,7 @@ class ObservationWeights:
         return GradedLikelihood(log_likelihood, n_obs)
 
     def get_posterior(self, var_selection: list[int], **kwargs) -> FullPosterior | None:
-        likelihood = self.get_likelihood(**kwargs)
+        likelihood = self.get_log_likelihood(**kwargs)
         if likelihood is None:
             return likelihood
 

@@ -11,7 +11,7 @@ from kc.terms import EnumResult
 
 
 def compute_spn_likelihood(spn: Node, state: KCState) -> float:
-    graded_log_likelihood = spn.compute_log_likelihood(state.beta_priors)
+    graded_log_likelihood = spn.get_log_likelihood(state.beta_priors)
     if graded_log_likelihood is None:
         return 0.0
     return np.exp(graded_log_likelihood.log_likelihood)

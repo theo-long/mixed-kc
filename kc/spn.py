@@ -2,9 +2,10 @@
 
 import itertools
 from abc import ABC, abstractmethod
+from math import prod
 from typing import Callable
 
-from kc.observation_weights import GradedLikelihood, ObservationWeights
+from kc.observation_weights import FullPosterior, GradedLikelihood, ObservationWeights
 
 
 class Node(ABC):
@@ -22,9 +23,14 @@ class Node(ABC):
     def scope(self) -> set[int]: ...
 
     @abstractmethod
-    def compute_log_likelihood(
+    def get_log_likelihood(
         self, beta_priors: dict[int, tuple[float, float]]
     ) -> GradedLikelihood | None: ...
+
+    @abstractmethod
+    def get_posterior(
+        self, var_selection: list[int], **kwargs
+    ) -> list[FullPosterior]: ...
 
     @abstractmethod
     def _tree_str(self, prefix="", is_last=True) -> str: ...
@@ -65,10 +71,14 @@ class WeightNode(Node):
     def scope(self):
         return self.weight.scope
 
-    def compute_log_likelihood(
+    def get_log_likelihood(
         self, beta_priors: dict[int, tuple[float, float]]
     ) -> GradedLikelihood | None:
-        return self.weight.get_likelihood(beta_priors=beta_priors)
+        return self.weight.get_log_likelihood(beta_priors=beta_priors)
+
+    def get_posterior(self, var_selection: list[int], **kwargs) -> list[FullPosterior]:
+        posterior = self.weight.get_posterior(var_selection, **kwargs)
+        return [posterior] if posterior else []
 
     def _tree_str(self, prefix="", is_last=True):
         res = ""
@@ -95,15 +105,27 @@ class Product(Node):
                 return False
         return True
 
-    def compute_log_likelihood(self, beta_priors: dict[int, tuple[float, float]]):
+    def get_log_likelihood(self, beta_priors: dict[int, tuple[float, float]]):
         log_likelihood = GradedLikelihood(0.0, 0)
         for child in self.children:
-            increment = child.compute_log_likelihood(beta_priors)
+            increment = child.get_log_likelihood(beta_priors)
             if increment is None:
                 # If anything is None i.e. p=0 in product, whole product is p=0
                 return None
             log_likelihood = log_likelihood * increment
         return log_likelihood
+
+    def get_posterior(self, var_selection: list[int], **kwargs) -> list[FullPosterior]:
+        posterior_combinations = itertools.product(
+            *(c.get_posterior(var_selection) for c in self.children)
+        )
+        product_posterior: list[FullPosterior] = []
+        for posterior_combination in posterior_combinations:
+            combined_posterior = prod(
+                posterior_combination, start=FullPosterior(GradedLikelihood(0.0, 0))
+            )
+            product_posterior.append(combined_posterior)
+        return product_posterior
 
     def _tree_str(self, prefix="", is_last=True):
         res = ""
@@ -130,14 +152,17 @@ class Sum(Node):
             return set()
         return set.union(*[c.scope for c in self.children])
 
-    def compute_log_likelihood(self, beta_priors: dict[int, tuple[float, float]]):  # type: ignore
+    def get_log_likelihood(self, beta_priors: dict[int, tuple[float, float]]):  # type: ignore
         log_likelihood = None
         for child in self.children:
-            log_likelihood_update = child.compute_log_likelihood(beta_priors)
+            log_likelihood_update = child.get_log_likelihood(beta_priors)
             # If update has p=0, we can just ignore it in sum
             if log_likelihood_update is not None:
                 log_likelihood = log_likelihood + log_likelihood_update
         return log_likelihood
+    
+    def get_posterior(self, var_selection: list[int], **kwargs) -> list[FullPosterior]:
+        return sum([c.get_posterior(var_selection) for c in self.children], [])
 
     def _tree_str(self, prefix="", is_last=True):
         res = ""
