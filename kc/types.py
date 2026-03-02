@@ -1,18 +1,4 @@
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
-
-import numpy as np
-import sympy
-from numpy.typing import NDArray
-
-if TYPE_CHECKING:
-    from kc.real_values import DistributionWithMoments
-
-epsilon = sympy.Symbol("epsilon")
-
-LikelihoodType = int | float
-PosteriorUpdateType = NDArray
-WeightType = PosteriorUpdateType | LikelihoodType
+from typing import Literal
 
 InequalityLiteral = Literal["<", "<=", ">", ">="]
 inequality_flip_mapping: dict[InequalityLiteral, InequalityLiteral] = {
@@ -21,58 +7,3 @@ inequality_flip_mapping: dict[InequalityLiteral, InequalityLiteral] = {
     "<=": ">=",
     ">=": "<=",
 }
-
-
-def get_degree(v: LikelihoodType):
-    if isinstance(v, (int, float)):
-        return 0
-
-    v_poly = sympy.expand(v).as_poly(epsilon)
-    assert v_poly is not None, "Should get a polynomial"
-    return sympy.degree(v_poly, epsilon)
-
-
-def get_float_value(
-    v: LikelihoodType, priors: dict[sympy.Symbol, "DistributionWithMoments"]
-) -> float:
-    if isinstance(v, (int, float)):
-        return float(v)
-
-    v_poly = sympy.expand(v).as_poly(epsilon)
-    assert v_poly is not None, "Should get a polynomial"
-
-    coeff = v_poly.coeffs()[-1]
-    for symbol, prior in priors.items():
-        max_degree = sympy.degree(coeff, symbol)
-        coeff = coeff.xreplace(
-            {symbol**i: prior.moment(i) for i in range(1, max_degree + 1)}
-        )
-    return float(coeff)
-
-
-@dataclass
-class GradedLikelihoodType:
-    log_likelihood: LikelihoodType
-    n_obs: int
-
-    def __add__(self, other: "GradedLikelihoodType | None"):
-        if other is None or self.n_obs < other.n_obs:
-            return self
-        elif other.n_obs < self.n_obs:
-            return other
-        else:
-            log_likelihood = np.logaddexp(
-                self.log_likelihood,  # type: ignore
-                other.log_likelihood,  # type: ignore
-            ).item()
-            return GradedLikelihoodType(log_likelihood, self.n_obs)
-
-    def __radd__(self, other: "GradedLikelihoodType | None"):
-        return self.__add__(other)
-
-    def __mul__(self, other: "GradedLikelihoodType"):
-        log_likelihood = self.log_likelihood + other.log_likelihood  # type: ignore
-        return GradedLikelihoodType(log_likelihood, self.n_obs + other.n_obs)
-
-    def __rmul__(self, other: "GradedLikelihoodType"):
-        return other.__mul__(self)

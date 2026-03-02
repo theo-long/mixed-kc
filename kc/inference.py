@@ -3,13 +3,11 @@ import numpy as np
 
 from kc.base import PExpr
 from kc.config import settings
-from kc.gaussian_math import get_expr_distribution
 from kc.model_count import model_count
-from kc.real_values import GaussianSum, GaussianVariable, RealConstant
+from kc.real_values import GaussianSum, GaussianVariable
 from kc.spn import Node
 from kc.state import KCState, PreprocessState
 from kc.terms import EnumResult
-from kc.types import get_degree
 
 
 def compute_spn_likelihood(spn: Node, state: KCState) -> float:
@@ -58,27 +56,7 @@ def binary_inference(val, state: KCState, normalizing_constant: float):
 
 
 def gaussian_inference(val, state, normalizing_constant, posterior_mixture):
-    normalized_posterior = []
-    min_degree = float("inf")
-    for weight, mu, cov in posterior_mixture:
-        degree = get_degree(weight)
-        if degree > min_degree:
-            continue
-        elif degree < min_degree and weight > 0:
-            # New min degree, clear out old weights
-            normalized_posterior.clear()
-            min_degree = degree
-        v = np.zeros((1, state.gaussian_count))
-        b = 0.0
-        for var in val.rvs:
-            assert not isinstance(var, RealConstant)
-            v[0, var.var - 1] = var.scale
-            b += var.shift
-        expr_mu, expr_cov = get_expr_distribution(mu, cov, v, b)
-        normalized_posterior.append(
-            (weight / normalizing_constant, (expr_mu, expr_cov))
-        )
-    return normalized_posterior, normalizing_constant
+    raise NotImplementedError
 
 
 def enum_inference(val: EnumResult, state: KCState, normalizing_constant: float):
