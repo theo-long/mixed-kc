@@ -226,7 +226,7 @@ class ObservationWeights:
         if self.likelihood == 0:
             return None
 
-        log_likelihood, n_obs = 0.0, 0
+        log_likelihood, n_obs = np.log(self.likelihood).item(), 0
         for dataclass_field in fields(self):
             weight = getattr(self, dataclass_field.name)
             if isinstance(weight, WeightType):
