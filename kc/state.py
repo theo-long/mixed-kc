@@ -3,12 +3,12 @@ from collections import defaultdict
 
 import dd.autoref as _bdd
 
+from kc.observation_weights import ObservationWeights, WeightType
 from kc.real_values import (
     DistributionWithDensity,
     Gaussian,
     GaussianVariable,
 )
-from kc.spn import ObservationWeights
 
 
 class RandomVariableCounter:
@@ -108,8 +108,8 @@ class KCState(RandomVariableCounter):
 
             self.set_weight(
                 interval_node_name,
-                ObservationWeights(flip_prob),
-                ObservationWeights(1.0 - flip_prob),
+                flip_prob,
+                1.0 - flip_prob,
             )
 
         return sorted_thresholds
@@ -140,10 +140,13 @@ class KCState(RandomVariableCounter):
     def set_weight(
         self,
         var,
-        pos_weight: ObservationWeights,
-        neg_weight: ObservationWeights,
+        pos_weight: int | float | WeightType,
+        neg_weight: int | float | WeightType,
     ):
-        self.weights[var] = (pos_weight, neg_weight)
+        self.weights[var] = (
+            ObservationWeights.from_weight(pos_weight),
+            ObservationWeights.from_weight(neg_weight),
+        )
 
 
 def get_gaussian_var_name(gaussian: int):

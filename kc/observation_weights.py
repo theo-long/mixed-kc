@@ -1,4 +1,6 @@
-from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field, fields
+from typing import Self
 
 import numpy as np
 from scipy.special import betaln
@@ -7,12 +9,11 @@ from kc.gaussian_math import log_score_singular
 
 
 def _build_gaussian_observation_matrix(
-    dim: int,
     scope_map: dict[int, int],
     gaussian_obs_coefficients: list[dict[int, float]],
     gaussian_obs_values: list[float],
 ) -> tuple[np.ndarray, np.ndarray]:
-    A = np.zeros((len(gaussian_obs_coefficients), dim))
+    A = np.zeros((len(gaussian_obs_coefficients), len(scope_map)))
     b = np.array(gaussian_obs_values)
 
     for i, vector in enumerate(gaussian_obs_coefficients):
@@ -21,36 +22,6 @@ def _build_gaussian_observation_matrix(
             A[i, j] = val
 
     return A, b
-
-
-def _get_gaussian_observation_likelihood_update(observation: "ObservationWeights"):
-    assert observation.gaussian_obs_values
-    assert observation.gaussian_obs_coefficients
-    scope_map = {s: i for i, s in enumerate(observation.scope)}
-    dim = len(observation.scope)
-    A, b = _build_gaussian_observation_matrix(
-        dim,
-        scope_map,
-        observation.gaussian_obs_coefficients,
-        observation.gaussian_obs_values,
-    )
-    log_score = log_score_singular(np.zeros((dim, 1)), np.eye(dim), A, b)
-    if log_score is None:
-        return None, 0
-    return log_score, np.linalg.matrix_rank(A)
-
-
-def _get_beta_observation_likelihood_update(
-    observation: "ObservationWeights", beta_priors: dict[int, tuple[float, float]]
-) -> float:
-    log_likelihood = 0
-    for var, (s, f) in observation.beta_counts.items():
-        alpha, beta = beta_priors[var]
-
-        # Log of the Beta ratio (Probability of this specific sequence of flips)
-        log_likelihood += betaln(s + alpha, f + beta) - betaln(alpha, beta)
-
-    return log_likelihood
 
 
 @dataclass(frozen=True)
@@ -65,8 +36,8 @@ class GradedLikelihood:
             return other
         else:
             log_likelihood = np.logaddexp(
-                self.log_likelihood,  # type: ignore
-                other.log_likelihood,  # type: ignore
+                self.log_likelihood,
+                other.log_likelihood,
             ).item()
             return GradedLikelihood(log_likelihood, self.n_obs)
 
@@ -74,33 +45,75 @@ class GradedLikelihood:
         return self.__add__(other)
 
     def __mul__(self, other: "GradedLikelihood"):
-        log_likelihood = self.log_likelihood + other.log_likelihood  # type: ignore
+        log_likelihood = self.log_likelihood + other.log_likelihood
         return GradedLikelihood(log_likelihood, self.n_obs + other.n_obs)
 
     def __rmul__(self, other: "GradedLikelihood"):
         return other.__mul__(self)
 
 
+class WeightType(ABC):
+    @property
+    def scope(self) -> set[int]:
+        return set()
+
+    @abstractmethod
+    def __mul__(self: Self, other) -> Self: ...
+
+    @abstractmethod
+    def get_likelihood(self, **kwargs) -> tuple[float | None, int]: ...
+
+
 @dataclass
-class ObservationWeights:
-    likelihood: float
+class GaussianWeight(WeightType):
     gaussian_obs_coefficients: list[dict[int, float]] = field(default_factory=list)
     gaussian_obs_values: list[float] = field(default_factory=list)
-    beta_counts: dict[int, tuple[int, int]] = field(default_factory=dict)
-    truncated_gaussian_obs: int = 0
 
     @property
     def scope(self) -> set[int]:
         scope = set()
         for obs_vector in self.gaussian_obs_coefficients:
             scope |= obs_vector.keys()
-        scope |= self.beta_counts.keys()
         return scope
 
-    def __str__(self):
-        return f"Obs(likelihood={self.likelihood}, beta_counts={self.beta_counts}, n_gaussian_obs={len(self.gaussian_obs_coefficients)}, trunc_obs={self.truncated_gaussian_obs}, scope={self.scope})"
+    def __str__(self) -> str:
+        return f"n_gaussian_obs={len(self.gaussian_obs_coefficients)}"
 
-    def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
+    def __mul__(self, other: "GaussianWeight"):
+        return GaussianWeight(
+            self.gaussian_obs_coefficients + other.gaussian_obs_coefficients,
+            self.gaussian_obs_values + other.gaussian_obs_values,
+        )
+
+    def get_likelihood(self, **kwargs):
+        if not self.gaussian_obs_values and self.gaussian_obs_coefficients:
+            return (0.0, 0)
+        scope_map = {s: i for i, s in enumerate(self.scope)}
+        A, b = _build_gaussian_observation_matrix(
+            scope_map,
+            self.gaussian_obs_coefficients,
+            self.gaussian_obs_values,
+        )
+        log_score = log_score_singular(
+            np.zeros((len(scope_map), 1)), np.eye(len(scope_map)), A, b
+        )
+        if log_score is None:
+            return None, 0
+        return log_score, np.linalg.matrix_rank(A)
+
+
+@dataclass
+class BetaWeight(WeightType):
+    beta_counts: dict[int, tuple[int, int]] = field(default_factory=dict)
+
+    @property
+    def scope(self) -> set[int]:
+        return set(self.beta_counts)
+
+    def __str__(self) -> str:
+        return f"n_beta_obs={len(self.beta_counts)}"
+
+    def __mul__(self, other: "BetaWeight"):
         beta_counts = dict(self.beta_counts)
         for var, (other_true_count, other_false_count) in other.beta_counts.items():
             true_count, false_count = beta_counts.get(var, (0, 0))
@@ -108,52 +121,116 @@ class ObservationWeights:
                 true_count + other_true_count,
                 false_count + other_false_count,
             )
+        return BetaWeight(beta_counts)
+
+    def get_likelihood(self, **kwargs):
+        if not self.beta_counts:
+            return 0.0, 0
+        log_likelihood = 0
+        beta_priors: dict[int, tuple[float, float]] = kwargs["beta_priors"]
+        for var, (s, f) in self.beta_counts.items():
+            alpha, beta = beta_priors[var]
+
+            # Log of the Beta ratio (Probability of this specific sequence of flips)
+            log_likelihood += betaln(s + alpha, f + beta) - betaln(alpha, beta)
+
+        return log_likelihood, 0
+
+
+# Note - conflicting TruncatedGaussian obs are handled inside the KCState class by directly constraining the BDD
+# This means we don't need to keep track of interactions and can simply directly compute likelihoods
+@dataclass
+class TruncatedGaussianWeight(WeightType):
+    likelihood: float = 1.0
+    n_obs: int = 0
+
+    @property
+    def scope(self) -> set[int]:
+        return set()
+
+    def __mul__(self, other: "TruncatedGaussianWeight"):
+        return TruncatedGaussianWeight(
+            self.likelihood * other.likelihood, self.n_obs + other.n_obs
+        )
+
+    def __add__(self, other: "TruncatedGaussianWeight"):
+        return TruncatedGaussianWeight(
+            self.likelihood + other.likelihood, self.n_obs + other.n_obs
+        )
+
+    def get_likelihood(self, **kwargs):
+        return np.log(self.likelihood).item(), self.n_obs
+
+
+@dataclass
+class ObservationWeights:
+    likelihood: float = 1.0
+    gaussian_obs: GaussianWeight = field(default_factory=GaussianWeight)
+    beta_obs: BetaWeight = field(default_factory=BetaWeight)
+    truncated_gaussian_obs: TruncatedGaussianWeight = field(
+        default_factory=TruncatedGaussianWeight
+    )
+
+    @property
+    def scope(self) -> set[int]:
+        scope = set()
+        for weight in fields(self):
+            if isinstance(weight, WeightType):
+                scope |= weight.scope
+        return scope
+
+    @classmethod
+    def from_weight(cls, weight: int | float | WeightType) -> "ObservationWeights":
+        if isinstance(weight, int | float):
+            return cls(likelihood=weight)
+        elif isinstance(weight, GaussianWeight):
+            return cls(gaussian_obs=weight)
+        elif isinstance(weight, BetaWeight):
+            return cls(beta_obs=weight)
+        elif isinstance(weight, TruncatedGaussianWeight):
+            return cls(truncated_gaussian_obs=weight)
+        else:
+            raise TypeError(f"Unrecognized weight type {type(weight)}")
+
+    def __str__(self):
+        rep_str = f"Obs(scope={self.scope}, likelihood={self.likelihood}"
+        for weight in fields(self):
+            if isinstance(weight, WeightType):
+                rep_str += ", "
+                rep_str += str(weight)
+        return rep_str + ")"
+
+    def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
         return ObservationWeights(
-            self.likelihood * other.likelihood,  # type: ignore
-            self.gaussian_obs_coefficients + other.gaussian_obs_coefficients,
-            self.gaussian_obs_values + other.gaussian_obs_values,
-            beta_counts,
-            self.truncated_gaussian_obs + other.truncated_gaussian_obs,
+            self.likelihood * other.likelihood,
+            self.gaussian_obs * self.gaussian_obs,
+            self.beta_obs * self.beta_obs,
+            self.truncated_gaussian_obs * self.truncated_gaussian_obs,
         )
 
     def __add__(self, other: "ObservationWeights"):
         if len(self.scope) + len(other.scope) == 0:
-            # Prefer the one with fewer obs *if* it has likelihood > 0
-            if (
-                self.truncated_gaussian_obs < other.truncated_gaussian_obs
-                and self.likelihood
-            ):
-                return self
-            elif (
-                other.truncated_gaussian_obs < self.truncated_gaussian_obs
-                and other.likelihood
-            ):
-                return other
-            else:
-                return ObservationWeights(
-                    self.likelihood + other.likelihood,  # type: ignore
-                    truncated_gaussian_obs=self.truncated_gaussian_obs,
-                )
+            # No gaussian or beta obs
+            return ObservationWeights(
+                self.likelihood + other.likelihood,
+                truncated_gaussian_obs=self.truncated_gaussian_obs
+                + other.truncated_gaussian_obs,
+            )
         else:
             # TODO: technically we could if everything had *the same* set of observations (or equivalent set)
             raise ValueError("Cannot add weights with observations")
 
-    def _get_observation_likelihood(
-        self, beta_priors: dict[int, tuple[float, float]]
-    ) -> GradedLikelihood | None:
+    def get_likelihood(self, **kwargs) -> GradedLikelihood | None:
         if self.likelihood == 0:
             return None
-        log_likelihood = np.log(self.likelihood).item()  # type: ignore
-        n_obs = self.truncated_gaussian_obs
-        if self.gaussian_obs_coefficients:
-            log_score, new_obs = _get_gaussian_observation_likelihood_update(self)
-            if log_score is None:
-                return None
-            log_likelihood += log_score
-            n_obs += new_obs
 
-        if self.beta_counts:
-            log_score = _get_beta_observation_likelihood_update(self, beta_priors)
-            log_likelihood += log_score
+        log_likelihood, n_obs = 0.0, 0
+        for weight in fields(self):
+            if isinstance(weight, WeightType):
+                log_likelihood_update, obs_update = weight.get_likelihood(**kwargs)
+                if log_likelihood_update is None:
+                    return None
+                log_likelihood += log_likelihood_update
+                n_obs += obs_update
 
         return GradedLikelihood(log_likelihood, n_obs)

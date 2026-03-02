@@ -12,7 +12,7 @@ from kc.real_values import (
     merge_real_values,
     merge_real_values_ignore_cond,
 )
-from kc.spn import ObservationWeights
+from kc.observation_weights import BetaWeight
 from kc.types import InequalityLiteral
 
 if TYPE_CHECKING:
@@ -128,16 +128,16 @@ class Flip(PExpr):
         state.bdd.declare(f"flip_{flip_id}")
         if isinstance(self.prob, (float, int)):
             pos, neg = (
-                ObservationWeights(self.prob),
-                ObservationWeights(1.0 - self.prob),
+                self.prob,
+                1.0 - self.prob,
             )
         else:
             prob_val = self.prob.kc(env, state)
             if not isinstance(prob_val, BetaVariable):
                 raise ValueError("Can only set Flip prob to float or Beta expression")
             pos, neg = (
-                ObservationWeights(1.0, beta_counts={prob_val.var: (1, 0)}),
-                ObservationWeights(1.0, beta_counts={prob_val.var: (0, 1)}),
+                BetaWeight({prob_val.var: (1, 0)}),
+                BetaWeight({prob_val.var: (0, 1)}),
             )
         state.set_weight(
             f"flip_{flip_id}",

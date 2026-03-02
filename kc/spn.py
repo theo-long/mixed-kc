@@ -68,7 +68,7 @@ class WeightNode(Node):
     def compute_log_likelihood(
         self, beta_priors: dict[int, tuple[float, float]]
     ) -> GradedLikelihood | None:
-        return self.weight._get_observation_likelihood(beta_priors)
+        return self.weight.get_likelihood(beta_priors=beta_priors)
 
     def _tree_str(self, prefix="", is_last=True):
         res = ""
