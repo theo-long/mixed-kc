@@ -284,3 +284,11 @@ This data can then be used to truncate all the Gaussian variables as above, wher
         2. ELSE
             - some recursive thing that terminates early when scopes are disjoint (figure it out!)
             (To look at later: vtree - way to constrain possible factorizations so that they "align" more)
+
+
+# TODO
+- beta observes
+- hash cons
+    - table of spn description to pointer. 
+        - spn description = pointers of children
+- think about how to handle cases where it might be ok to pass beta as gauss param
