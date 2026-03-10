@@ -4,7 +4,7 @@ import numpy as np
 from kc.base import PExpr
 from kc.config import settings
 from kc.model_count import model_count
-from kc.real_values import GaussianSum, GaussianVariable
+from kc.real_values import GaussianSum, GaussianVariable, BetaVariable
 from kc.spn import Node
 from kc.state import KCState, PreprocessState
 from kc.terms import EnumResult
@@ -55,8 +55,22 @@ def binary_inference(val, state: KCState, normalizing_constant: float):
     return compute_spn_likelihood(spn, state) / normalizing_constant
 
 
-def gaussian_inference(val, state, normalizing_constant, posterior_mixture):
-    raise NotImplementedError
+def gaussian_inference(val: GaussianSum, state: KCState, normalizing_constant: float):
+    spn = model_count(state.bdd, state.observes_all_hold, state.weights)
+    posterior = spn.get_posterior(
+        [v.var for v in val.rvs if isinstance(v, GaussianVariable)],
+        beta_priors=state.beta_priors,
+    )
+    return posterior
+
+
+def beta_inference(val: BetaVariable, state: KCState, normalizing_constant: float):
+    spn = model_count(state.bdd, state.observes_all_hold, state.weights)
+    posterior = spn.get_posterior(
+        [val.var],
+        beta_priors=state.beta_priors,
+    )
+    return posterior
 
 
 def enum_inference(val: EnumResult, state: KCState, normalizing_constant: float):
@@ -97,5 +111,11 @@ def run_kc(expr: PExpr):
         return binary_inference(val, state, normalizing_constant), normalizing_constant
     elif isinstance(val, EnumResult):
         return enum_inference(val, state, normalizing_constant), normalizing_constant
+    elif isinstance(val, GaussianSum):
+        return gaussian_inference(
+            val, state, normalizing_constant
+        ), normalizing_constant
+    elif isinstance(val, BetaVariable):
+        return beta_inference(val, state, normalizing_constant), normalizing_constant
     else:
         raise TypeError(f"Cannot perform inference for value of type {type(val)}")

@@ -117,7 +117,7 @@ class Product(Node):
 
     def get_posterior(self, var_selection: list[int], **kwargs) -> list[FullPosterior]:
         posterior_combinations = itertools.product(
-            *(c.get_posterior(var_selection) for c in self.children)
+            *(c.get_posterior(var_selection, **kwargs) for c in self.children)
         )
         product_posterior: list[FullPosterior] = []
         for posterior_combination in posterior_combinations:
@@ -162,7 +162,7 @@ class Sum(Node):
         return log_likelihood
     
     def get_posterior(self, var_selection: list[int], **kwargs) -> list[FullPosterior]:
-        return sum([c.get_posterior(var_selection) for c in self.children], [])
+        return sum([c.get_posterior(var_selection, **kwargs) for c in self.children], [])
 
     def _tree_str(self, prefix="", is_last=True):
         res = ""
