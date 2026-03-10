@@ -1,3 +1,6 @@
+from kc import Affine
+import numpy as np
+
 from kc import (
     Beta,
     Const,
@@ -13,6 +16,35 @@ from kc import (
 )
 
 
+def test_basic_beta_posterior():
+    # Model: b ~ Beta(2, 2)
+    # f1 ~ Flip(b)
+    # f2 ~ Flip(b)
+    # Observe f1 and f2 are True
+    # Posterior should be Beta(2+2, 2+0) => Beta(4, 2)
+    p = Let(
+        "b",
+        Beta(2, 2),
+        Let(
+            "f1",
+            Flip(Var("b")),
+            Let(
+                "f2",
+                Flip(Var("b")),
+                Let(
+                    "obs",
+                    Observe(IfThenElse(Var("f1"), Var("f2"), Const(False))),
+                    Var("b"),
+                ),
+            ),
+        ),
+    )
+    posterior, Z = run_kc(p)
+    assert posterior
+    assert posterior[0].beta.alphas[0] == 4
+    assert posterior[0].beta.betas[0] == 2
+
+
 def test_beta_posterior():
     p = Let(
         "b1",
@@ -22,37 +54,36 @@ def test_beta_posterior():
             Beta(5, 1),
             Let(
                 "f1",
-                Flip(
-                    Var("b1"),
-                ),
+                Flip(Var("b1")),
                 Let(
-                    "x",
-                    IfThenElse(
-                        Var("f1"),
+                    "f2",
+                    Flip(Var("b2")),
+                    Let(
+                        "x",
                         IfThenElse(
-                            Var("b2"),
-                            Flip(
-                                Var("b1"),
+                            Var("f1"),
+                            IfThenElse(
+                                Var("f2"),
+                                Flip(Var("b1")),
+                                Flip(Var("b2")),
                             ),
-                            Flip(Var("b2")),
-                        ),
-                        IfThenElse(
-                            Var("b1"),
-                            Flip(
-                                Var("b1"),
+                            IfThenElse(
+                                Var("f2"),
+                                Flip(Var("b1")),
+                                Const(True),
                             ),
-                            Const(True),
                         ),
+                        Let("_", Observe(Var("x")), Var("b1")),
                     ),
-                    Let("_", Observe(Var("x")), Var("b1")),
                 ),
             ),
         ),
     )
     posterior, Z = run_kc(p)
+    assert posterior
 
 
-def test_gaussian_posterior():
+def test_simple_gaussian_posterior():
     p = Let(
         "g1",
         Gaussian(0, 1),
@@ -63,3 +94,34 @@ def test_gaussian_posterior():
         ),
     )
     posterior, Z = run_kc(p)
+    assert np.allclose(posterior[0].gaussian.mu, 0.5)
+    assert np.allclose(posterior[0].gaussian.cov, 0.5)
+
+
+def test_mixture_gaussian_posterior():
+    p = Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 1),
+            Let(
+                "x",
+                IfThenElse(
+                    Flip(0.75),
+                    Sum(Var("g1"), Var("g2")),
+                    Affine(Var("g1"), 2.0),
+                ),
+                Let("_", ObserveReal(Sum(Var("g1"), Var("g2")), 1.0), Var("g1")),
+            ),
+        ),
+    )
+    posterior, Z = run_kc(p)
+
+    assert np.allclose(posterior[0].gaussian.mu, 0.5)
+    assert np.allclose(posterior[0].gaussian.cov, 0.5)
+    assert np.allclose(posterior[0].likelihood.log_likelihood, np.log(0.75))
+
+    assert np.allclose(posterior[1].gaussian.mu, 0.5)
+    assert np.allclose(posterior[1].gaussian.cov, 0.5)
+    assert np.allclose(posterior[1].likelihood.log_likelihood, np.log(0.25))

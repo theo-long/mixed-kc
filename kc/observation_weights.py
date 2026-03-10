@@ -3,6 +3,7 @@ from dataclasses import dataclass, field, fields
 from typing import Self
 
 import numpy as np
+import scipy.linalg
 from scipy.special import betaln
 
 from kc.gaussian_math import get_gaussian_posterior, log_score_singular
@@ -82,7 +83,12 @@ class GaussianPosterior(Posterior):
             "Cannot combine posteriors with overlapping scopes"
         )
         mu = np.concatenate((self.mu, other.mu), axis=0)
-        cov = np.block((self.cov, other.cov))
+        if self.cov.size == 0:
+            cov = other.cov
+        elif other.cov.size == 0:
+            cov = self.cov
+        else:
+            cov = scipy.linalg.block_diag(self.cov, other.cov)
         return GaussianPosterior(self.scope + other.scope, mu, cov)
 
 
@@ -254,7 +260,7 @@ class FullPosterior:
         assert not (set(self.scope) & set(other.scope)), (
             "Cannot combine posteriors with overlapping scopes"
         )
-        FullPosterior(
+        return FullPosterior(
             self.likelihood * other.likelihood,
             self.gaussian * other.gaussian,
             self.beta * other.beta,
@@ -354,7 +360,7 @@ class ObservationWeights:
 
         beta_vars = self.beta_obs.scope & var_selection_set
         if beta_vars:
-            beta_posterior = self.beta_obs.get_posterior(list(gaussian_vars), **kwargs)
+            beta_posterior = self.beta_obs.get_posterior(list(beta_vars), **kwargs)
         else:
             beta_posterior = BetaPosterior()
 

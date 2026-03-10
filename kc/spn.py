@@ -77,7 +77,11 @@ class WeightNode(Node):
         return self.weight.get_log_likelihood(beta_priors=beta_priors)
 
     def get_posterior(self, var_selection: list[int], **kwargs) -> list[FullPosterior]:
-        posterior = self.weight.get_posterior(var_selection, **kwargs)
+        child_vars = [v for v in var_selection if v in self.scope]
+        if not child_vars:
+            likelihood = self.weight.get_log_likelihood(**kwargs)
+            return [FullPosterior(likelihood)] if likelihood else []
+        posterior = self.weight.get_posterior(child_vars, **kwargs)
         return [posterior] if posterior else []
 
     def _tree_str(self, prefix="", is_last=True):
@@ -117,10 +121,13 @@ class Product(Node):
 
     def get_posterior(self, var_selection: list[int], **kwargs) -> list[FullPosterior]:
         posterior_combinations = itertools.product(
-            *(c.get_posterior(var_selection, **kwargs) for c in self.children)
+            *(c.get_posterior([v for v in var_selection if v in c.scope], **kwargs) for c in self.children)
         )
         product_posterior: list[FullPosterior] = []
         for posterior_combination in posterior_combinations:
+            if not posterior_combination:
+                product_posterior.append(FullPosterior(GradedLikelihood(0.0, 0)))
+                continue
             combined_posterior = prod(
                 posterior_combination, start=FullPosterior(GradedLikelihood(0.0, 0))
             )
@@ -279,7 +286,14 @@ def _mul_sum_weight(a: Sum, b: WeightNode):
                 disjoint_children.append(child)
             else:
                 overlapping_children.append(child * b)
-        return Sum(Product(b, Sum(*disjoint_children)), *overlapping_children)
+        
+        new_children = list(overlapping_children)
+        if disjoint_children:
+            if len(disjoint_children) == 1:
+                new_children.append(Product(b, disjoint_children[0]))
+            else:
+                new_children.append(Product(b, Sum(*disjoint_children)))
+        return Sum(*new_children)
 
 
 def _mul_product_weight(a: Product, b: WeightNode):
@@ -287,13 +301,24 @@ def _mul_product_weight(a: Product, b: WeightNode):
         return WeightNode(ObservationWeights(0.0))
     if a.scope.isdisjoint(b.scope):
         return Product(a, b)
-    new_children = []
+    
+    disjoint_children = []
+    overlapping_children = []
     for child in a.children:
-        if a.scope.isdisjoint(b.scope):
-            new_children.append(child)
+        if child.scope.isdisjoint(b.scope):
+            disjoint_children.append(child)
         else:
-            new_children.append(child * b)
-    return Product(*new_children)
+            overlapping_children.append(child)
+            
+    if len(overlapping_children) == 1:
+        merged_overlap = overlapping_children[0] * b
+    else:
+        merged_overlap = Product(*overlapping_children) * b
+        
+    if disjoint_children:
+        return Product(*disjoint_children, merged_overlap)
+    else:
+        return merged_overlap
 
 
 def _mul_weight_weight(a: WeightNode, b: WeightNode):
