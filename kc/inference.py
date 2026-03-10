@@ -1,3 +1,4 @@
+from kc.observation_weights import FullPosterior, GradedLikelihood
 import dd.autoref as _bdd
 import numpy as np
 
@@ -55,13 +56,26 @@ def binary_inference(val, state: KCState, normalizing_constant: float):
     return compute_spn_likelihood(spn, state) / normalizing_constant
 
 
+def normalize_posterior(posterior: list[FullPosterior], normalizing_constant: float):
+    normalized_posterior = []
+    n_obs = min(c.likelihood.n_obs for c in posterior)
+    for component in posterior:
+        if component.likelihood.n_obs > n_obs:
+            continue
+        component.likelihood = GradedLikelihood(
+            component.likelihood.log_likelihood - np.log(normalizing_constant), n_obs
+        )
+        normalized_posterior.append(component)
+    return normalized_posterior
+
+
 def gaussian_inference(val: GaussianSum, state: KCState, normalizing_constant: float):
     spn = model_count(state.bdd, state.observes_all_hold, state.weights)
     posterior = spn.get_posterior(
         [v.var for v in val.rvs if isinstance(v, GaussianVariable)],
         beta_priors=state.beta_priors,
     )
-    return posterior
+    return normalize_posterior(posterior, normalizing_constant)
 
 
 def beta_inference(val: BetaVariable, state: KCState, normalizing_constant: float):
@@ -70,7 +84,7 @@ def beta_inference(val: BetaVariable, state: KCState, normalizing_constant: floa
         [val.var],
         beta_priors=state.beta_priors,
     )
-    return posterior
+    return normalize_posterior(posterior, normalizing_constant)
 
 
 def enum_inference(val: EnumResult, state: KCState, normalizing_constant: float):

@@ -112,16 +112,24 @@ def test_mixture_gaussian_posterior():
                     Sum(Var("g1"), Var("g2")),
                     Affine(Var("g1"), 2.0),
                 ),
-                Let("_", ObserveReal(Sum(Var("g1"), Var("g2")), 1.0), Var("g1")),
+                Let("_", ObserveReal(Var("x"), 1.0), Var("g1")),
             ),
         ),
     )
     posterior, Z = run_kc(p)
 
+    assert len(posterior) == 2
+    assert np.allclose(sum(np.exp(c.likelihood.log_likelihood) for c in posterior), 1.0)
+
+    # Slightly more likely to observe g1 + g2 = 1 than 2 * g1 = 2, so mixture weight slightly higher than 0.75
     assert np.allclose(posterior[0].gaussian.mu, 0.5)
     assert np.allclose(posterior[0].gaussian.cov, 0.5)
-    assert np.allclose(posterior[0].likelihood.log_likelihood, np.log(0.75))
+    assert np.allclose(
+        posterior[0].likelihood.log_likelihood, np.log(0.7892126302729954)
+    )
 
     assert np.allclose(posterior[1].gaussian.mu, 0.5)
-    assert np.allclose(posterior[1].gaussian.cov, 0.5)
-    assert np.allclose(posterior[1].likelihood.log_likelihood, np.log(0.25))
+    assert np.allclose(posterior[1].gaussian.cov, 0.0)
+    assert np.allclose(
+        posterior[1].likelihood.log_likelihood, np.log(0.21078736972700463)
+    )

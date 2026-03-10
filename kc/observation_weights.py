@@ -75,7 +75,7 @@ class Posterior(ABC):
 
 @dataclass
 class GaussianPosterior(Posterior):
-    mu: np.typing.NDArray = field(default_factory=lambda: np.zeros((0)))
+    mu: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 1)))
     cov: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 0)))
 
     def __mul__(self, other: "GaussianPosterior"):
