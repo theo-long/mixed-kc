@@ -292,3 +292,4 @@ This data can then be used to truncate all the Gaussian variables as above, wher
     - table of spn description to pointer. 
         - spn description = pointers of children
 - think about how to handle cases where it might be ok to pass beta as gauss param
+- Add Dirichlet processes
