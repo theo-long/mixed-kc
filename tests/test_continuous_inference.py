@@ -1,7 +1,7 @@
-from kc import Affine
 import numpy as np
 
 from kc import (
+    Affine,
     Beta,
     Const,
     Flip,
