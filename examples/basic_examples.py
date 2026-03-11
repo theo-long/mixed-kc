@@ -1,6 +1,23 @@
 from kc import dsl, run_kc
 
 
+def discrete_example():
+    with dsl.Model() as m:
+        f1 = dsl.flip(0.5, name="f1")
+        f2 = dsl.flip(0.1, name="f2")
+        f3 = dsl.flip(0.8, name="f3")
+        x = dsl.ifthenelse(
+            f1, f2, dsl.ifthenelse(f3, dsl.const(False), dsl.const(True))
+        )
+        dsl.observe(x)
+    ir = m.compile("f1")
+    posterior, Z = run_kc(ir)
+    print("----- Discrete Example -----")
+    print(f"Posterior probability of f1 == True: {posterior: .2%}")
+    print()
+    return m
+
+
 def simple_gaussian_mixture():
     with dsl.Model() as m:
         g1 = dsl.gaussian(0.0, 1.0)
@@ -85,6 +102,7 @@ def multiple_beta_example():
 
 
 if __name__ == "__main__":
+    discrete_example()
     simple_gaussian_mixture()
     measure_zero_gaussian_example()
     interacting_gaussian_mixture()
