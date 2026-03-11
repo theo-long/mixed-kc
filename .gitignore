@@ -208,4 +208,4 @@ __marimo__/
 
 # Scratch files
 *.scratch*
-visualize_data.json
+visualize_data*.json

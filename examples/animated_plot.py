@@ -1,3 +1,4 @@
+from typing import Literal
 import json
 
 import matplotlib.pyplot as plt
@@ -159,12 +160,11 @@ def format_ast_lines(node, evaluated_map, current_node_id):
         return [(f"<{node.get('type', 'Unknown')}_node>", is_hl)]
 
 
-def create_animation():
-    with open("visualize_data.json", "r") as f:
+def create_animation(name: Literal["discrete", "gaussian"]):
+    with open(f"visualize_data_{name}.json", "r") as f:
         data = json.load(f)
 
     comp_steps = data["compilation_steps"]
-    wmc_steps = data["wmc_steps"]
     bdd_nodes = data["bdd_nodes"]
 
     G_bdd = nx.DiGraph()
@@ -200,7 +200,6 @@ def create_animation():
 
     # Track visible graph
     visible_bdd_nodes = set()
-    wmc_results = {}
 
     fig, (ax_ast, ax_graph) = plt.subplots(
         1, 2, figsize=(16, 8), gridspec_kw={"width_ratios": [1, 1]}
@@ -217,13 +216,10 @@ def create_animation():
         ast_str = frame_data["ast_str"]
         highlighting_ast_node = frame_data["highlighting_ast_node"]
         highlighting_bdd_node = frame_data["highlighting_bdd_node"]
-        show_wmc = frame_data["show_wmc"]
         cur_visible_bdd_nodes = frame_data["visible_bdd_nodes"]
-        cur_wmc_results = frame_data["wmc_results"]
         cur_evaluated_map = frame_data["evaluated_map"]
 
-        title = "WMC Phase" if show_wmc else "Compilation Phase"
-        fig.suptitle(f"Knowledge Compilation & WMC\n{title}", fontsize=16)
+        fig.suptitle("Knowledge Compilation Phase", fontsize=16)
 
         # Draw AST Text
         if initial_ast:
@@ -283,7 +279,7 @@ def create_animation():
                 pos_bdd,
                 ax=ax_graph,
                 node_size=800,
-                node_color="skyblue" if not show_wmc else "lightgray",
+                node_color="skyblue",
             )
 
             # Highlight
@@ -335,19 +331,7 @@ def create_animation():
                     bbox=dict(alpha=0.0),
                 )
 
-        # Draw WMC strings next to nodes
-        if show_wmc:
-            for nid, res_str in cur_wmc_results.items():
-                if nid in pos_bdd:
-                    x, y = pos_bdd[nid]
-                    ax_graph.text(
-                        x + 0.1,
-                        y,
-                        res_str,
-                        color="blue",
-                        fontsize=9,
-                        bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"),
-                    )
+        # No more WMC strings here
 
     # Step 1: Compilation Phase
     for step in comp_steps:
@@ -377,54 +361,25 @@ def create_animation():
                 visible_bdd_nodes.add(nid)
                 visible_bdd_nodes.update(nx.descendants(G_bdd, nid))
 
-            frames_data.append(
-                {
-                    "ast_str": expr_str,
-                    "highlighting_ast_node": ast_id,
-                    "highlighting_bdd_node": nid if (nid in G_bdd.nodes) else None,
-                    "show_wmc": False,
-                    "visible_bdd_nodes": set(visible_bdd_nodes),
-                    "wmc_results": dict(wmc_results),
-                    "evaluated_map": dict(evaluated_map),
-                }
-            )
+                frames_data.append(
+                    {
+                        "ast_str": expr_str,
+                        "highlighting_ast_node": ast_id,
+                        "highlighting_bdd_node": nid if (nid in G_bdd.nodes) else None,
+                        "visible_bdd_nodes": set(visible_bdd_nodes),
+                        "evaluated_map": dict(evaluated_map),
+                    }
+                )
 
-        elif step["event"] == "start_kc":
             frames_data.append(
                 {
                     "ast_str": expr_str,
                     "highlighting_ast_node": ast_id,
                     "highlighting_bdd_node": None,
-                    "show_wmc": False,
                     "visible_bdd_nodes": set(visible_bdd_nodes),
-                    "wmc_results": dict(wmc_results),
                     "evaluated_map": dict(evaluated_map),
                 }
             )
-
-    # Step 2: WMC Phase
-    for step in wmc_steps:
-        nid_str = step["node_idx"]
-        res_str = step["result"]
-        try:
-            nid = int(nid_str)
-        except ValueError:
-            continue
-
-        wmc_results = dict(wmc_results)
-        wmc_results[nid] = res_str
-
-        frames_data.append(
-            {
-                "ast_str": "WMC Evaluation...",
-                "highlighting_ast_node": None,
-                "highlighting_bdd_node": nid,
-                "show_wmc": True,
-                "visible_bdd_nodes": set(visible_bdd_nodes),
-                "wmc_results": dict(wmc_results),
-                "evaluated_map": dict(evaluated_map),
-            }
-        )
 
     current_frame = [0]
 
@@ -465,4 +420,11 @@ def create_animation():
 
 
 if __name__ == "__main__":
-    create_animation()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--example", type=str, choices=["discrete", "gaussian"], default="discrete"
+    )
+    args = parser.parse_args()
+    create_animation(args.example)

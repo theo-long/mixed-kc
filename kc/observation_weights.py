@@ -84,7 +84,9 @@ class GaussianPosterior(Posterior):
     cov: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 0)))
 
     def __str__(self):
-        mu_str = np.array2string(self.mu.squeeze(-1) if self.mu.size > 0 else self.mu, precision=3)
+        mu_str = np.array2string(
+            self.mu.squeeze(-1) if self.mu.size > 0 else self.mu, precision=3
+        )
         cov_str = np.array2string(self.cov, precision=3)
         return f"GaussianPosterior(mu={mu_str}, cov={cov_str})"
 
@@ -323,10 +325,12 @@ class ObservationWeights:
             raise TypeError(f"Unrecognized weight type {type(weight)}")
 
     def __str__(self):
-        rep_str = f"Obs(scope={self.scope}, likelihood={self.likelihood}"
+        rep_str = f"Obs(likelihood={self.likelihood:.3f}"
+        if self.scope:
+            rep_str += f", scope={self.scope}"
         for dataclass_field in fields(self):
             weight = getattr(self, dataclass_field.name)
-            if isinstance(weight, WeightType):
+            if isinstance(weight, WeightType) and weight.scope:
                 rep_str += ", "
                 rep_str += str(weight)
         return rep_str + ")"
