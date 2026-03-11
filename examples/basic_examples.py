@@ -1,3 +1,4 @@
+from kc import get_spn
 from kc import dsl, run_kc
 
 
@@ -27,7 +28,11 @@ def simple_gaussian_mixture():
         dsl.observe(x, 1.0)
     ir = m.compile("f1")
     posterior, Z = run_kc(ir)
+    spn = get_spn(ir)
     print("----- Simple Gaussian Mixture -----")
+    print("SPN: ")
+    print(spn)
+    print("Posterior: ")
     print(f"Posterior probability of f1 == True: {posterior: .2%}")
     print()
     return m
@@ -43,7 +48,11 @@ def measure_zero_gaussian_example():
         dsl.observe(g1, 1.0)
     ir = m.compile("f1")
     posterior, Z = run_kc(ir)
+    spn = get_spn(ir)
     print("----- Measure Zero Gaussian Example -----")
+    print("SPN: ")
+    print(spn)
+    print("Posterior: ")
     print(f"Posterior probability of f1 == True: {posterior: .2%}")
     print()
     return m
@@ -58,7 +67,11 @@ def interacting_gaussian_mixture():
 
     ir = m.compile("g1")
     posterior, Z = run_kc(ir)
+    spn = get_spn(ir)
     print("----- Interacting Gaussian Mixture -----")
+    print("SPN: ")
+    print(spn)
+    print("Posterior: ")
     for component in posterior:
         print(component)
     print()
@@ -72,7 +85,11 @@ def beta_example():
         dsl.observe(f1)
     ir = m.compile("b")
     posterior, Z = run_kc(ir)
+    spn = get_spn(ir)
     print("----- Beta Example -----")
+    print("SPN: ")
+    print(spn)
+    print("Posterior: ")
     if isinstance(posterior, list):
         for component in posterior:
             print(component)

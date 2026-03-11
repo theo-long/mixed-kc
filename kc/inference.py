@@ -133,3 +133,9 @@ def run_kc(expr: PExpr):
         return beta_inference(val, state, normalizing_constant), normalizing_constant
     else:
         raise TypeError(f"Cannot perform inference for value of type {type(val)}")
+
+
+def get_spn(expr: PExpr):
+    preprocess_state = preprocess(expr)
+    val, state = kc(expr, preprocess_state)
+    return model_count(state.bdd, state.observes_all_hold, state.weights)
