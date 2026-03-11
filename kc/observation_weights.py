@@ -30,6 +30,11 @@ class GradedLikelihood:
     log_likelihood: float
     n_obs: int
 
+    def __str__(self):
+        return (
+            f"likelihood={np.exp(self.log_likelihood).item(): .3%}, n_obs={self.n_obs}"
+        )
+
     def __add__(self, other: "GradedLikelihood | None"):
         if other is None or self.n_obs < other.n_obs:
             return self
@@ -77,6 +82,11 @@ class Posterior(ABC):
 class GaussianPosterior(Posterior):
     mu: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 1)))
     cov: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 0)))
+
+    def __str__(self):
+        mu_str = np.array2string(self.mu.squeeze(-1) if self.mu.size > 0 else self.mu, precision=3)
+        cov_str = np.array2string(self.cov, precision=3)
+        return f"GaussianPosterior(mu={mu_str}, cov={cov_str})"
 
     def __mul__(self, other: "GaussianPosterior"):
         assert not (set(self.scope) & set(other.scope)), (
@@ -158,6 +168,9 @@ class GaussianWeight(WeightType):
 class BetaPosterior(Posterior):
     alphas: list[float] = field(default_factory=list)
     betas: list[float] = field(default_factory=list)
+
+    def __str__(self):
+        return f"BetaPosterior(alphas={self.alphas}, betas={self.betas})"
 
     def __mul__(self, other: "BetaPosterior"):
         assert not (set(self.scope) & set(other.scope)), (
@@ -255,6 +268,17 @@ class FullPosterior:
     @property
     def scope(self):
         return self.gaussian.scope + self.beta.scope
+
+    def __str__(self):
+        parts = [str(self.likelihood)]
+        if self.gaussian.scope:
+            parts.append(str(self.gaussian))
+        if self.beta.scope:
+            parts.append(str(self.beta))
+        return f"FullPosterior({', '.join(parts)})"
+
+    def __repr__(self):
+        return str(self)
 
     def __mul__(self, other: "FullPosterior"):
         assert not (set(self.scope) & set(other.scope)), (
