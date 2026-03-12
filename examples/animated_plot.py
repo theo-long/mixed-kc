@@ -1,9 +1,9 @@
-from typing import Literal
 import json
+from typing import Literal
 
 import matplotlib.pyplot as plt
-import networkx as nx
 from matplotlib.widgets import Button
+import networkx as nx
 
 
 def get_layout(nodes, edges, G):

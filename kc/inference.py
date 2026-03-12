@@ -57,7 +57,7 @@ def binary_inference(val, state: KCState, normalizing_constant: float):
 
 
 def normalize_posterior(posterior: list[FullPosterior], normalizing_constant: float):
-    normalized_posterior = []
+    normalized_posterior: list[FullPosterior] = []
     n_obs = min(c.likelihood.n_obs for c in posterior)
     for component in posterior:
         if component.likelihood.n_obs > n_obs:
