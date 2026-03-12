@@ -8,6 +8,7 @@ dependencies = [
     "dd>=0.6.0",
     "imageio>=2.37.3",
     "ipykernel>=7.1.0",
+    "ipympl>=0.10.0",
     "ipython>=9.9.0",
     "matplotlib>=3.10.8",
     "multiset>=3.2.0",
