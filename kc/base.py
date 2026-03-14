@@ -11,9 +11,7 @@ class PExpr(ABC):
     # Automatically wrap the 'kc' method of all subclasses
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        print("__init_subclass__")
         if "kc" in cls.__dict__:
-            print("has kc")
             cls.kc = step_hook(cls.kc)
 
     @abstractmethod

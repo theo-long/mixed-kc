@@ -325,9 +325,9 @@ class ObservationWeights:
             raise TypeError(f"Unrecognized weight type {type(weight)}")
 
     def __str__(self):
-        rep_str = f"Obs(likelihood={self.likelihood:.3f}"
-        if self.scope:
-            rep_str += f", scope={self.scope}"
+        if not self.scope:
+            return f"{self.likelihood:.3f}"
+        rep_str = f"Obs(likelihood={self.likelihood:.3f}, scope={self.scope}"
         for dataclass_field in fields(self):
             weight = getattr(self, dataclass_field.name)
             if isinstance(weight, WeightType) and weight.scope:

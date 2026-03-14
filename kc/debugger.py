@@ -1,6 +1,9 @@
 from functools import wraps
 
+import dd.autoref as _bdd
+
 from kc.config import settings
+
 
 class Debugger:
     def __init__(self):
@@ -8,9 +11,7 @@ class Debugger:
 
     def before_execute(self, node, env):
         indent = "  " * self.depth
-        print(
-            f"{indent}▶ Stepping into: {node.__class__.__name__} | Node State: {vars(node)}"
-        )
+        print(f"\n{indent}{node.__class__.__name__}(", end="")
 
         input(f"{indent}(Press Enter to evaluate...)")
 
@@ -19,7 +20,11 @@ class Debugger:
     def after_execute(self, node, result):
         self.depth -= 1
         indent = "  " * self.depth
-        print(f"{indent}◀ Evaluated: {node.__class__.__name__} -> {result}\n")
+        if isinstance(result, _bdd.Function):
+            result_str = result.to_expr()
+        else:
+            result_str = str(result)
+        print(f") ===> {result_str},\n{indent}", end="")
 
 
 # A global debugger instance for simplicity,
