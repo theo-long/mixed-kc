@@ -194,6 +194,9 @@ class BetaWeight(WeightType):
         return set(self.beta_counts)
 
     def __str__(self) -> str:
+        if len(self.beta_counts) == 1:
+            var, (s, f) = next(iter(self.beta_counts.items()))
+            return f"β{var}({s},{f})"
         return f"n_beta_obs={len(self.beta_counts)}"
 
     def __mul__(self, other: "BetaWeight"):
@@ -325,8 +328,18 @@ class ObservationWeights:
             raise TypeError(f"Unrecognized weight type {type(weight)}")
 
     def __str__(self):
+        if self.likelihood == 0:
+            return "0.0"
+
         if not self.scope:
             return f"{self.likelihood:.3f}"
+
+        if len(self.scope) == 1:
+            for dataclass_field in fields(self):
+                weight = getattr(self, dataclass_field.name)
+                if isinstance(weight, WeightType) and weight.scope:
+                    return f"({self.likelihood},{str(weight)})"
+
         rep_str = f"Obs(likelihood={self.likelihood:.3f}, scope={self.scope}"
         for dataclass_field in fields(self):
             weight = getattr(self, dataclass_field.name)
