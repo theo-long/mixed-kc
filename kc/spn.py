@@ -202,6 +202,8 @@ def _add_sum_product(a: Sum, b: Product):
 
 
 def _add_sum_weight(a: Sum, b: WeightNode):
+    if b.weight.likelihood == 0.0:
+        return a
     new_children = []
     add_b = True
     for child in a.children:
@@ -230,6 +232,10 @@ def _add_weight_weight(a: WeightNode, b: WeightNode):
     # TODO: we can also sum weights when the observations are *equivalent*
     if len(a.scope.union(b.scope)) == 0:
         return WeightNode(a.weight + b.weight)
+    elif a.weight.likelihood == 0.0:
+        return b
+    elif b.weight.likelihood == 0.0:
+        return a
     else:
         return Sum(a, b)
 
@@ -330,7 +336,7 @@ def _mul_product_weight(a: Product, b: WeightNode):
 
 
 def _mul_weight_weight(a: WeightNode, b: WeightNode):
-    if b.weight.likelihood == 0:
+    if b.weight.likelihood == 0 or a.weight.likelihood == 0:
         return WeightNode(ObservationWeights(0.0))
     return WeightNode(a.weight * b.weight)
 
