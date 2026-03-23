@@ -310,8 +310,8 @@ class BetaVariable(RealVariable):
 
 @dataclass(eq=True, frozen=True)
 class Union[T: RealVariable](RealValue, AffineTransformable, Truncatable):
-    formulae: tuple[Any]
-    values: tuple[T]
+    formulae: tuple[Any, ...]
+    values: tuple[T, ...]
 
     def get_inequality_expr(
         self, val: float, state: "KCState", inequality: InequalityLiteral

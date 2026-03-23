@@ -1,4 +1,5 @@
 from . import dsl
+from .dirichlet_process import DirichletProcess, Draw
 from .config import settings
 from .inference import run_kc
 from .real_values import (
@@ -17,6 +18,7 @@ from .terms import (
     Observe,
     ObserveReal,
     Var,
+    Equality,
 )
 
 __all__ = [

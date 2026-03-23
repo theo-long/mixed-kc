@@ -51,7 +51,7 @@ class KCState(RandomVariableCounter):
     def __init__(self, preprocess_state: PreprocessState):
         self.bdd = _bdd.BDD()
         self.flips = 0
-        self.flip_params = 0
+        self.dps = 0
         self.weights: dict[
             int,
             tuple[
@@ -132,10 +132,10 @@ class KCState(RandomVariableCounter):
     def next_flip(self):
         self.flips += 1
         return self.flips
-
-    def next_flip_param(self):
-        self.flip_params += 1
-        return self.flip_params
+    
+    def next_dp(self):
+        self.dps += 1
+        return self.dps
 
     def set_weight(
         self,

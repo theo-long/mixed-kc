@@ -1,4 +1,6 @@
+import math
 from abc import ABC, abstractmethod
+from collections import Counter
 from dataclasses import dataclass, field, fields
 from typing import Self
 
@@ -247,6 +249,80 @@ class TruncatedGaussianWeight(WeightType):
 
 
 @dataclass
+class DirichletProcessWeight(WeightType):
+    """CRP representation of Dirichlet Process
+
+    {a : b} represents the statement "customer a sat at the same table as customer b" in a CRP.
+    {a : a} means customer at sat a new table.
+    """
+
+    cluster_assignments: dict[int, dict[int, int]] = field(default_factory=dict)
+
+    def __mul__(self, other: "DirichletProcessWeight"):
+        new_cluster_assignments = {}
+        for process in (
+            self.cluster_assignments.keys() | other.cluster_assignments.keys()
+        ):
+            self_assignments = self.cluster_assignments.get(process, None)
+            other_assignments = other.cluster_assignments.get(process, None)
+            if not self_assignments and other_assignments:
+                new_cluster_assignments[process] = other_assignments
+            elif not other_assignments and self_assignments:
+                new_cluster_assignments[process] = self_assignments
+
+            assert other_assignments and self_assignments
+
+            new_assignments = {}
+            for k, v in self_assignments.items():
+                if k == v:
+                    # {a : a} means customer a sat at new table.
+                    new_assignments[k] = v
+                else:
+                    # {a : b} means customer a sat at the same table as customer b.
+                    new_assignments[k] = other_assignments[v]
+
+            for k, v in other_assignments.items():
+                if k == v:
+                    # {a : a} means customer a sat at new table.
+                    new_assignments[k] = v
+                else:
+                    # {a : b} means customer a sat at the same table as customer b.
+                    new_assignments[k] = self_assignments[v]
+
+            new_cluster_assignments[process] = new_assignments
+
+        return DirichletProcessWeight(new_cluster_assignments)
+
+    def get_log_likelihood(self, **kwargs) -> tuple[float | None, int]:
+        log_likelihood = 0.0
+        for process, cluster_assignment in self.cluster_assignments.items():
+            alpha = kwargs["dp_priors"][process]
+            N = len(cluster_assignment)
+            table_sizes = Counter(cluster_assignment.values())
+            K = len(table_sizes)
+
+            # 1. Log of the alpha^K term
+            log_term_alpha = K * math.log(alpha)
+
+            # 2. Sum of log((n_k - 1)!) using the log-gamma function
+            # math.lgamma(x) computes the natural logarithm of the absolute value of the Gamma function
+            log_term_tables = sum(math.lgamma(size) for size in table_sizes.values())
+
+            # 3. Sum of log(alpha + i - 1) for the denominator
+            log_term_denominator = sum(math.log(alpha + i - 1) for i in range(1, N + 1))
+
+            # Combine: log(A * B / C) = log(A) + log(B) - log(C)
+            log_prob = log_term_alpha + log_term_tables - log_term_denominator
+
+            log_likelihood += log_prob
+
+        return log_likelihood, 0
+
+    def get_posterior(self, var_selection: list[int], **kwargs):
+        raise NotImplementedError
+
+
+@dataclass
 class FullPosterior:
     likelihood: GradedLikelihood
     gaussian: GaussianPosterior = field(default_factory=GaussianPosterior)
@@ -275,6 +351,9 @@ class ObservationWeights:
     truncated_gaussian_obs: TruncatedGaussianWeight = field(
         default_factory=TruncatedGaussianWeight
     )
+    dirichlet_process_obs: DirichletProcessWeight = field(
+        default_factory=DirichletProcessWeight
+    )
 
     @property
     def scope(self) -> set[int]:
@@ -295,6 +374,8 @@ class ObservationWeights:
             return cls(beta_obs=weight)
         elif isinstance(weight, TruncatedGaussianWeight):
             return cls(truncated_gaussian_obs=weight)
+        elif isinstance(weight, DirichletProcessWeight):
+            return cls(dirichlet_process_obs=weight)
         else:
             raise TypeError(f"Unrecognized weight type {type(weight)}")
 
@@ -313,6 +394,7 @@ class ObservationWeights:
             self.gaussian_obs * other.gaussian_obs,
             self.beta_obs * other.beta_obs,
             self.truncated_gaussian_obs * other.truncated_gaussian_obs,
+            self.dirichlet_process_obs * other.dirichlet_process_obs,
         )
 
     def __add__(self, other: "ObservationWeights"):
