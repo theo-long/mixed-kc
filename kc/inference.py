@@ -1,11 +1,11 @@
-from kc.observation_weights import FullPosterior, GradedLikelihood
 import dd.autoref as _bdd
 import numpy as np
 
 from kc.base import PExpr
 from kc.config import settings
 from kc.model_count import model_count
-from kc.real_values import GaussianSum, GaussianVariable, BetaVariable
+from kc.observation_weights import FullPosterior, GradedLikelihood
+from kc.real_values import BetaVariable, GaussianSum, GaussianVariable
 from kc.spn import Node
 from kc.state import KCState, PreprocessState
 from kc.terms import EnumResult
