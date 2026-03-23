@@ -32,6 +32,11 @@ class GradedLikelihood:
     log_likelihood: float
     n_obs: int
 
+    def __str__(self):
+        return (
+            f"likelihood={np.exp(self.log_likelihood).item(): .3%}, n_obs={self.n_obs}"
+        )
+
     def __add__(self, other: "GradedLikelihood | None"):
         if other is None or self.n_obs < other.n_obs:
             return self
@@ -79,6 +84,13 @@ class Posterior(ABC):
 class GaussianPosterior(Posterior):
     mu: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 1)))
     cov: np.typing.NDArray = field(default_factory=lambda: np.zeros((0, 0)))
+
+    def __str__(self):
+        mu_str = np.array2string(
+            self.mu.squeeze(-1) if self.mu.size > 0 else self.mu, precision=3
+        )
+        cov_str = np.array2string(self.cov, precision=3)
+        return f"GaussianPosterior(mu={mu_str}, cov={cov_str})"
 
     def __mul__(self, other: "GaussianPosterior"):
         assert not (set(self.scope) & set(other.scope)), (
@@ -161,6 +173,9 @@ class BetaPosterior(Posterior):
     alphas: list[float] = field(default_factory=list)
     betas: list[float] = field(default_factory=list)
 
+    def __str__(self):
+        return f"BetaPosterior(alphas={self.alphas}, betas={self.betas})"
+
     def __mul__(self, other: "BetaPosterior"):
         assert not (set(self.scope) & set(other.scope)), (
             "Cannot combine posteriors with overlapping scopes"
@@ -181,6 +196,9 @@ class BetaWeight(WeightType):
         return set(self.beta_counts)
 
     def __str__(self) -> str:
+        if len(self.beta_counts) == 1:
+            var, (s, f) = next(iter(self.beta_counts.items()))
+            return f"β{var}({s},{f})"
         return f"n_beta_obs={len(self.beta_counts)}"
 
     def __mul__(self, other: "BetaWeight"):
@@ -332,6 +350,17 @@ class FullPosterior:
     def scope(self):
         return self.gaussian.scope + self.beta.scope
 
+    def __str__(self):
+        parts = [str(self.likelihood)]
+        if self.gaussian.scope:
+            parts.append(str(self.gaussian))
+        if self.beta.scope:
+            parts.append(str(self.beta))
+        return f"FullPosterior({', '.join(parts)})"
+
+    def __repr__(self):
+        return str(self)
+
     def __mul__(self, other: "FullPosterior"):
         assert not (set(self.scope) & set(other.scope)), (
             "Cannot combine posteriors with overlapping scopes"
@@ -380,10 +409,22 @@ class ObservationWeights:
             raise TypeError(f"Unrecognized weight type {type(weight)}")
 
     def __str__(self):
-        rep_str = f"Obs(scope={self.scope}, likelihood={self.likelihood}"
+        if self.likelihood == 0:
+            return "0.0"
+
+        if not self.scope:
+            return f"{self.likelihood:.3f}"
+
+        if len(self.scope) == 1:
+            for dataclass_field in fields(self):
+                weight = getattr(self, dataclass_field.name)
+                if isinstance(weight, WeightType) and weight.scope:
+                    return f"({self.likelihood},{str(weight)})"
+
+        rep_str = f"Obs(likelihood={self.likelihood:.3f}, scope={self.scope}"
         for dataclass_field in fields(self):
             weight = getattr(self, dataclass_field.name)
-            if isinstance(weight, WeightType):
+            if isinstance(weight, WeightType) and weight.scope:
                 rep_str += ", "
                 rep_str += str(weight)
         return rep_str + ")"

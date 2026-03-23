@@ -40,7 +40,7 @@ def test_basic_beta_posterior():
         ),
     )
     posterior, Z = run_kc(p)
-    assert posterior
+    assert isinstance(posterior, list)
     assert posterior[0].beta.alphas[0] == 4
     assert posterior[0].beta.betas[0] == 2
 
@@ -94,6 +94,7 @@ def test_simple_gaussian_posterior():
         ),
     )
     posterior, Z = run_kc(p)
+    assert isinstance(posterior, list)
     assert np.allclose(posterior[0].gaussian.mu, 0.5)
     assert np.allclose(posterior[0].gaussian.cov, 0.5)
 
@@ -106,18 +107,23 @@ def test_mixture_gaussian_posterior():
             "g2",
             Gaussian(0, 1),
             Let(
-                "x",
-                IfThenElse(
-                    Flip(0.75),
-                    Sum(Var("g1"), Var("g2")),
-                    Affine(Var("g1"), 2.0),
+                "flip",
+                Flip(0.75),
+                Let(
+                    "x",
+                    IfThenElse(
+                        Var("flip"),
+                        Sum(Var("g1"), Var("g2")),
+                        Affine(Var("g1"), 2.0),
+                    ),
+                    Let("_", ObserveReal(Var("x"), 1.0), Var("g1")),
                 ),
-                Let("_", ObserveReal(Var("x"), 1.0), Var("g1")),
             ),
         ),
     )
     posterior, Z = run_kc(p)
 
+    assert isinstance(posterior, list)
     assert len(posterior) == 2
     assert np.allclose(sum(np.exp(c.likelihood.log_likelihood) for c in posterior), 1.0)
 

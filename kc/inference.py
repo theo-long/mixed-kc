@@ -57,7 +57,7 @@ def binary_inference(val, state: KCState, normalizing_constant: float):
 
 
 def normalize_posterior(posterior: list[FullPosterior], normalizing_constant: float):
-    normalized_posterior = []
+    normalized_posterior: list[FullPosterior] = []
     n_obs = min(c.likelihood.n_obs for c in posterior)
     for component in posterior:
         if component.likelihood.n_obs > n_obs:
@@ -133,3 +133,9 @@ def run_kc(expr: PExpr):
         return beta_inference(val, state, normalizing_constant), normalizing_constant
     else:
         raise TypeError(f"Cannot perform inference for value of type {type(val)}")
+
+
+def get_spn(expr: PExpr):
+    preprocess_state = preprocess(expr)
+    val, state = kc(expr, preprocess_state)
+    return model_count(state.bdd, state.observes_all_hold, state.weights)

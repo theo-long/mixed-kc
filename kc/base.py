@@ -1,20 +1,26 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from kc.debugger import step_hook
+
 if TYPE_CHECKING:
     from kc.state import KCState, PreprocessState
 
 
 class PExpr(ABC):
+    # Automatically wrap the 'kc' method of all subclasses
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if "kc" in cls.__dict__:
+            cls.kc = step_hook(cls.kc)
+
     @abstractmethod
     def kc(self, env: dict[str, "PExpr"], state: "KCState") -> Any:
         """Compile this probabilistic expression into the KCState and return the corresponding BDD."""
         raise NotImplementedError()
 
     @abstractmethod
-    def preprocess(
-        self, env: dict[str, "PExpr"], state: "PreprocessState"
-    ) -> Any:
+    def preprocess(self, env: dict[str, "PExpr"], state: "PreprocessState") -> Any:
         """Perform various preprocessing steps before KC."""
         raise NotImplementedError()
 

@@ -56,8 +56,8 @@ def model(measurements):
 
 
 if __name__ == "__main__":
-    # Feet, feet, cm, inches, cm, m
-    data = [6.0 , 6.1, 180, 73] #, 110, 1.1]
+    # Feet, feet, cm, inches
+    data = [6.0 , 6.1, 110, 73]
 
     m = model(data)
     for i in range(len(data)):
