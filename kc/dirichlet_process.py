@@ -58,7 +58,6 @@ class DirichletProcessVariable:
             prev_draw -= 1
 
         self._n += 1
-        print(f"Draw {self._n} from {self.var}")
 
         return Union(tuple(table_exprs), tuple(self._draws))
 
