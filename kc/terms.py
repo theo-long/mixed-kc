@@ -9,7 +9,7 @@ from kc.real_values import (
     Truncatable,
     TruncatableGaussianVariable,
     Union,
-    merge_real_values,
+    merge_guarded_unions,
     merge_real_values_ignore_cond,
 )
 from kc.observation_weights import BetaWeight
@@ -162,7 +162,9 @@ class IfThenElse(PExpr):
         else_result = self.else_expr.kc(env, state)
 
         if isinstance(then_result, RealValue):
-            return merge_real_values(condition_bdd, then_result, else_result)
+            return merge_guarded_unions(
+                [(condition_bdd, then_result), (~condition_bdd, else_result)]  # type: ignore
+            )
         elif isinstance(then_result, EnumResult):
             assert (
                 isinstance(else_result, EnumResult)

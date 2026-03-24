@@ -21,9 +21,6 @@ class Config(BaseSettings):
         cli_parse_args=cli_args_value, cli_implicit_flags=True
     )
 
-    union_of_sums: bool = (
-        True  # Whether to use union of sums or sum of unions representation
-    )
     debug: bool = False
     transform_measures: bool = True
     profiling: bool = False

@@ -1,8 +1,16 @@
 from dataclasses import dataclass
 
+import dd.autoref as _bdd
+
 from kc.base import PExpr
 from kc.observation_weights import DirichletProcessWeight
-from kc.real_values import Gaussian, GaussianSum, Union
+from kc.real_values import (
+    Gaussian,
+    GaussianSum,
+    RealVariable,
+    Union,
+    merge_guarded_unions,
+)
 from kc.state import KCState, PreprocessState
 
 
@@ -25,7 +33,7 @@ class DirichletProcessVariable:
         self.var = var
         self.alpha = alpha
         self.base = base
-        self._draws: list[GaussianSum] = []
+        self._assignment_exprs: list[Union[GaussianSum]] = []
         self._n = 0
 
     def draw(self, env: dict[str, PExpr], state: KCState):
@@ -34,17 +42,19 @@ class DirichletProcessVariable:
 
         # We draw a new value from the base distribution
         new_value = self.base.kc(env, state)
-        self._draws.append(new_value)
 
         # If no draws yet, must sit at new table
         if self._n == 0:
             self._n += 1
+            self._assignment_exprs.append(Union((state.bdd.true,), (new_value,)))
             return new_value
 
         # We iterate through all the existing customers
         draw_number = self._n
         prev_draw = draw_number
-        table_exprs = []
+        guarded_table_assignments: list[
+            tuple[_bdd._Ref, Union[RealVariable] | RealVariable]
+        ] = []
         table_expr = state.bdd.true
         while prev_draw > 0:
             # Variable representing customer draw_number sitting at same table as prev_draw
@@ -53,7 +63,9 @@ class DirichletProcessVariable:
 
             # If sits at same table as customer prev_draw, update table counts
             # Otherwise, continue to next customer
-            table_exprs.append(table_expr & state.bdd.var(var))
+            guarded_table_assignments.append(
+                (table_expr & state.bdd.var(var), self._assignment_exprs[prev_draw])
+            )
 
             # In next iteration we did *not* sit at the current table, so add that to the table_expr
             table_expr = table_expr & ~state.bdd.var(var)
@@ -62,7 +74,9 @@ class DirichletProcessVariable:
             if prev_draw == 1:
                 false_weight = DirichletProcessWeight({self.var: {draw_number: 0}})
                 # add the guard expr corresponding to picking table 0
-                table_exprs.append(table_expr)
+                guarded_table_assignments.append(
+                    (table_expr, self._assignment_exprs[0])
+                )
             else:
                 false_weight = 1.0
 
@@ -76,8 +90,9 @@ class DirichletProcessVariable:
 
         self._n += 1
 
-        assert len(table_exprs) == len(self._draws)
-        return Union(tuple(table_exprs), tuple(self._draws))
+        assert len(guarded_table_assignments) == len(self._assignment_exprs)
+
+        return merge_guarded_unions(guarded_table_assignments)
 
 
 @dataclass

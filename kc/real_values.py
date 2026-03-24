@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Self, Sequence
 
 import dd.autoref as _bdd
 from scipy.stats import beta, norm
@@ -442,14 +442,6 @@ class Sum(PExpr):
         left = self.left.kc(env, state)
         right = self.right.kc(env, state)
 
-        if not settings.union_of_sums:
-            # Reduce to case of sum of sums
-            if not isinstance(left, GaussianSum):
-                left = GaussianSum(frozenset([left]))
-            if not isinstance(right, GaussianSum):
-                right = GaussianSum(frozenset([right]))
-            return left + right
-
         # We make everything a Union to simplify the logic
         # We effectively 'invert' Unions so that sum of Unions becomes Union of Sums
         if not isinstance(left, Union):
@@ -487,14 +479,6 @@ class Sum(PExpr):
     def preprocess(self, env, state):
         left = self.left.preprocess(env, state)
         right = self.right.preprocess(env, state)
-
-        if not settings.union_of_sums:
-            # Reduce to case of sum of sums
-            if not isinstance(left, GaussianSum):
-                left = GaussianSum(frozenset([left]))
-            if not isinstance(right, GaussianSum):
-                right = GaussianSum(frozenset([right]))
-            return left + right
 
         # We make everything a Union to simplify the logic
         # We effectively 'invert' Unions so that sum of Unions becomes Union of Sums
@@ -568,83 +552,21 @@ def merge_real_values_ignore_cond(t, f):
     return Union(formulae=(None,), values=tuple(set(f_values + t_values)))  # type: ignore
 
 
-def merge_real_values(cond, t, f):
-    """
-    Merge two RealValues (t and f) based on condition cond.
-    If t or f is a GaussianSum, we 'invert' the Union to create a Union of Sums if this setting is enabled.
-    """
-    # If neither t nor f is a GaussianSum, we can use the simpler 'reduced' merging logic
-    if settings.union_of_sums:
-        return merge_real_values_reduced(cond, t, f)
-
-    if isinstance(t, GaussianSum):
-        t_vals = t.rvs
-    else:
-        t_vals = [t]
-    if isinstance(f, GaussianSum):
-        f_vals = f.rvs
-    else:
-        f_vals = [f]
-
-    # Now we can merge each corresponding term in the Gaussian sums
-    sum_terms: dict[Union | GaussianVariable, int] = defaultdict(int)
-    for t_val, f_val in itertools.zip_longest(t_vals, f_vals):
-        t_val = t_val if t_val is not None else RealConstant(0.0)
-        f_val = f_val if f_val is not None else RealConstant(0.0)
-        merged_term = merge_real_values_reduced(cond, t_val, f_val)
-        if not isinstance(merged_term, Union):
-            raise TypeError(
-                "Merged term should be a Union when merging GaussianSum terms"
-            )
-        sum_terms[merged_term] += 1
-
-    merged_sum_terms = []
-    for term, count in sum_terms.items():
-        if count == 1:
-            merged_sum_terms.append(term)
-        else:
-            merged_sum_terms.append(term.apply_affine(count, 0.0))
-
-    return GaussianSum(frozenset(merged_sum_terms))
-
-
-def merge_real_values_reduced(cond, t, f):
+def merge_guarded_unions(
+    guarded_values: Sequence[tuple[_bdd._Ref, Union[RealVariable] | RealVariable]],
+) -> Union[RealVariable]:
     """
     Merge two RealValues (t and f) based on condition cond where t and f have been reduced i.e. have no GaussianSum terms..
     """
     # Extract formulae and values from t (then branch)
-    if isinstance(t, RealVariable):
-        t_formulae = [cond]
-        t_values = [t]
-    elif isinstance(t, Union):
-        # AND each formula with cond, ensuring formulae and values are aligned
-        t_formulae = [cond & formula for formula in t.formulae]
-        t_values = t.values
-    else:
-        raise TypeError(f"Unexpected type for t: {type(t)}")
-
-    # Extract formulae and values from f (else branch)
-    if isinstance(f, RealVariable):
-        f_formulae = [~cond]
-        f_values = [f]
-    elif isinstance(f, Union):
-        # AND each formula with ~cond, ensuring formulae and values are aligned
-        f_formulae = [~cond & formula for formula in f.formulae]
-        f_values = f.values
-    else:
-        raise TypeError(f"Unexpected type for f: {type(f)}")
-
-    # Build a map from var -> list of guards (formulae) for that variable
-    # This allows us to OR together guards for the same variable
     var_to_guards = defaultdict(list)
+    for formula, value in guarded_values:
+        if isinstance(value, Union):
+            for union_guard, union_sub_value in zip(value.formulae, value.values):
+                var_to_guards[union_sub_value].append(formula & union_guard)
+        else:
+            var_to_guards[value].append(formula)
 
-    # Process t then f branch: formulae and values are aligned
-    for formula, rv in itertools.chain(
-        zip(t_formulae, t_values), zip(f_formulae, f_values)
-    ):
-        var_to_guards[rv].append(formula)
-
-    # Build aligned lists: OR together guards for each unique variable
     all_formulae = []
     all_values = []
     for var, guards in var_to_guards.items():

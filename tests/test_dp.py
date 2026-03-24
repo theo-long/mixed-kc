@@ -1,11 +1,11 @@
 from kc import (
-    Sum,
     Affine,
     DirichletProcess,
     Draw,
     Gaussian,
     Let,
     ObserveReal,
+    Sum,
     Var,
     run_kc,
 )
@@ -40,6 +40,15 @@ def test_dirichlet_process():
         ),
     )
 
-    posterior, Z = run_kc(expr)
+    from kc.inference import preprocess, kc, model_count, get_normalizing_constant, compute_spn_likelihood
+
+    preprocess_state = preprocess(expr)
+    val, state = kc(expr, preprocess_state)
+    spn = model_count(state.bdd, state.observes_all_hold, state.weights)
+    Z = compute_spn_likelihood(spn, state)
+
+    from IPython import embed
+
+    embed()
 
 test_dirichlet_process()
