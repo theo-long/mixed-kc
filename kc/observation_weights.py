@@ -320,6 +320,9 @@ class DirichletProcessWeight(WeightType):
     def get_log_likelihood(self, **kwargs) -> tuple[float | None, int]:
         log_likelihood = 0.0
         for process, cluster_assignment in self.cluster_assignments.items():
+            # customer 0 always sits at table 0, this is implict in the representation
+            # TODO - this is hacky and mutates the SPN when you call get_log_likelihood!
+            cluster_assignment[0] = 0
             alpha = kwargs["dp_priors"][process]
             N = len(cluster_assignment)
             table_sizes = Counter(cluster_assignment.values())
