@@ -36,12 +36,17 @@ class DirichletProcessVariable:
         new_value = self.base.kc(env, state)
         self._draws.append(new_value)
 
+        # If no draws yet, must sit at new table
+        if self._n == 0:
+            self._n += 1
+            return new_value
+
         # We iterate through all the existing customers
         draw_number = self._n
         prev_draw = draw_number
         table_exprs = []
         table_expr = state.bdd.true
-        while prev_draw >= 0:
+        while prev_draw > 0:
             # Variable representing customer draw_number sitting at same table as prev_draw
             var = f"DP_{self.var}_draw_{draw_number}_table_{prev_draw}"
             state.bdd.declare(var)
@@ -49,12 +54,24 @@ class DirichletProcessVariable:
             # If sits at same table as customer prev_draw, update table counts
             # Otherwise, continue to next customer
             table_exprs.append(table_expr & state.bdd.var(var))
+
+            # In next iteration we did *not* sit at the current table, so add that to the table_expr
+            table_expr = table_expr & ~state.bdd.var(var)
+
+            # If we do not choose draw 1, then we *must* choose draw 0
+            if prev_draw == 1:
+                false_weight = DirichletProcessWeight({self.var: {draw_number: 0}})
+                # add the guard expr corresponding to picking table 0
+                table_exprs.append(table_expr)
+            else:
+                false_weight = 1.0
+
             state.set_weight(
-                var, DirichletProcessWeight({self.var: {draw_number: prev_draw}}), 1.0
+                var,
+                DirichletProcessWeight({self.var: {draw_number: prev_draw}}),
+                false_weight,
             )
 
-            # We did *not* sit at the current table, so add that condition to the table_expr
-            table_expr = table_expr & ~state.bdd.var(var)
             prev_draw -= 1
 
         self._n += 1
