@@ -62,8 +62,8 @@ class GradedLikelihood:
 
 class WeightType(ABC):
     @property
-    def scope(self) -> set[int]:
-        return set()
+    @abstractmethod
+    def scope(self) -> set[int]: ...
 
     @abstractmethod
     def __mul__(self: Self, other) -> Self: ...
@@ -275,6 +275,10 @@ class DirichletProcessWeight(WeightType):
     """
 
     cluster_assignments: dict[int, dict[int, int]] = field(default_factory=dict)
+
+    @property
+    def scope(self):
+        return set(self.cluster_assignments.keys())
 
     def __mul__(self, other: "DirichletProcessWeight"):
         new_cluster_assignments = {}

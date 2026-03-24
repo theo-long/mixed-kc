@@ -73,4 +73,5 @@ class DirichletProcess(PExpr):
 
     def kc(self, env, state):
         var = state.next_dp()
+        state.dp_priors[var] = self.alpha
         return DirichletProcessVariable(var, self.alpha, self.base)

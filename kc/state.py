@@ -60,6 +60,7 @@ class KCState(RandomVariableCounter):
             ],
         ] = {}
         self.beta_priors: dict[int, tuple[float, float]] = {}
+        self.dp_priors: dict[int, float] = {}
         self._observes_all_hold = self.bdd.true
         self.truncations = preprocess_state.truncation_counter.truncations
         self.bdd_equality_nodes: dict[int, set[str]] = defaultdict(set)
