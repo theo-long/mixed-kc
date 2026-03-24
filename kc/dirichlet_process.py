@@ -41,7 +41,7 @@ class DirichletProcessVariable:
         prev_draw = draw_number
         table_exprs = []
         table_expr = state.bdd.true
-        while prev_draw:
+        while prev_draw >= 0:
             # Variable representing customer draw_number sitting at same table as prev_draw
             var = f"DP_{self.var}_draw_{draw_number}_table_{prev_draw}"
             state.bdd.declare(var)
@@ -59,6 +59,7 @@ class DirichletProcessVariable:
 
         self._n += 1
 
+        assert len(table_exprs) == len(self._draws)
         return Union(tuple(table_exprs), tuple(self._draws))
 
 

@@ -285,8 +285,10 @@ class DirichletProcessWeight(WeightType):
             other_assignments = other.cluster_assignments.get(process, None)
             if not self_assignments and other_assignments:
                 new_cluster_assignments[process] = other_assignments
+                continue
             elif not other_assignments and self_assignments:
                 new_cluster_assignments[process] = self_assignments
+                continue
 
             assert other_assignments and self_assignments
 
