@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
 from kc.base import AExpr, PExpr
+from kc.observation_weights import BetaWeight
 from kc.real_values import (
     BetaVariable,
     RealValue,
@@ -12,7 +13,6 @@ from kc.real_values import (
     merge_guarded_unions,
     merge_real_values_ignore_cond,
 )
-from kc.observation_weights import BetaWeight
 from kc.types import InequalityLiteral
 
 if TYPE_CHECKING:
