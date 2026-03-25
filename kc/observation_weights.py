@@ -87,10 +87,10 @@ class GaussianPosterior(Posterior):
 
     def __str__(self):
         mu_str = np.array2string(
-            self.mu.squeeze(-1) if self.mu.size > 0 else self.mu, precision=3
+            self.mu.squeeze() if self.mu.size > 0 else self.mu, precision=3
         )
         cov_str = np.array2string(self.cov, precision=3)
-        return f"GaussianPosterior(mu={mu_str}, cov={cov_str})"
+        return f"GaussianPosterior({self.scope}, mu={mu_str}, cov={cov_str})"
 
     def __mul__(self, other: "GaussianPosterior"):
         assert not (set(self.scope) & set(other.scope)), (
@@ -164,7 +164,7 @@ class GaussianWeight(WeightType):
         return GaussianPosterior(
             var_selection,
             mu[indices],
-            cov[indices, indices],
+            cov[np.ix_(indices, indices)],
         )
 
 
@@ -284,7 +284,9 @@ class DirichletProcessWeight(WeightType):
     @property
     def scope(self):
         # The scope of the DP weight should be all of the Gaussian RV draws from it
-        raise NotImplementedError
+        if self.cluster_assignments:
+            raise NotImplementedError
+        return set()
 
     def __mul__(self, other: "DirichletProcessWeight"):
         new_cluster_assignments = {}
@@ -483,24 +485,22 @@ class ObservationWeights:
         if likelihood is None:
             return likelihood
 
-        var_selection_set = set(var_selection)
-
-        gaussian_vars = self.gaussian_obs.scope & var_selection_set
+        gaussian_vars = [v for v in var_selection if v in self.gaussian_obs.scope]
         if gaussian_vars:
             gaussian_posterior = self.gaussian_obs.get_posterior(
-                list(gaussian_vars), **kwargs
+                gaussian_vars, **kwargs
             )
         else:
             gaussian_posterior = GaussianPosterior()
 
-        beta_vars = self.beta_obs.scope & var_selection_set
+        beta_vars = [v for v in var_selection if self.beta_obs.scope]
         if beta_vars:
             beta_posterior = self.beta_obs.get_posterior(list(beta_vars), **kwargs)
         else:
             beta_posterior = BetaPosterior()
 
         # Verify that we have queried all vars
-        assert var_selection_set == gaussian_vars | beta_vars, (
+        assert set(var_selection) == set(gaussian_vars + beta_vars), (
             "Must get posterior for all vars"
         )
 

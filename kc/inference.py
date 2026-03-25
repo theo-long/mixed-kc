@@ -1,11 +1,13 @@
 import dd.autoref as _bdd
 import numpy as np
+import scipy.linalg
 
 from kc.base import PExpr
 from kc.config import settings
+from kc.gaussian_math import get_expr_distribution
 from kc.model_count import model_count
-from kc.observation_weights import FullPosterior, GradedLikelihood
-from kc.real_values import BetaVariable, GaussianSum, GaussianVariable
+from kc.observation_weights import FullPosterior, GaussianPosterior, GradedLikelihood
+from kc.real_values import BetaVariable, GaussianSum, GaussianVariable, Union
 from kc.spn import Node
 from kc.state import KCState, PreprocessState
 from kc.terms import EnumResult
@@ -69,12 +71,58 @@ def normalize_posterior(posterior: list[FullPosterior], normalizing_constant: fl
     return normalized_posterior
 
 
+def _fill_in_missing_gaussian_vars(rvs: list[int], posterior: FullPosterior):
+    """Add in gaussian vars left implicit that have no correlation with others."""
+    missing_vars = [i for i in rvs if i not in posterior.gaussian.scope]
+    mu = np.concat([np.zeros((len(missing_vars), 1)), posterior.gaussian.mu])
+    cov = scipy.linalg.block_diag(np.eye(len(missing_vars)), posterior.gaussian.cov)
+    desired_order = [rvs.index(var) for var in missing_vars + posterior.gaussian.scope]
+    mu = mu[desired_order, :]
+    cov = cov[np.ix_(desired_order, desired_order)]
+    return mu, cov
+
+
+def get_gaussian_sum_posterior(
+    val: GaussianSum, spn: Node, state: KCState
+) -> list[FullPosterior]:
+    rvs: list[int] = []
+    scales: list[float] = []
+    shifts: list[float] = []
+    for rv in val.rvs:
+        if isinstance(rv, GaussianVariable):
+            rvs.append(rv.var)
+            scales.append(rv.scale)
+            shifts.append(rv.shift)
+        else:
+            shifts.append(rv.value)
+    v = np.array(scales)[None, :]
+    b = sum(shifts)
+    joint_posterior = spn.get_posterior(
+        rvs,
+        beta_priors=state.beta_priors,
+        dp_priors=state.dp_priors,
+    )
+    posterior: list[FullPosterior] = []
+    for component in joint_posterior:
+        if set(component.gaussian.scope) != set(rvs):
+            mu, cov = _fill_in_missing_gaussian_vars(rvs, component)
+        else:
+            mu, cov = component.gaussian.mu, component.gaussian.cov
+            assert rvs == component.gaussian.scope, "Scope and rvs should be in the same order"
+
+        scale, shift = get_expr_distribution(mu, cov, v, b)
+        posterior.append(
+            FullPosterior(
+                likelihood=component.likelihood,
+                gaussian=GaussianPosterior(rvs, scale, shift),
+            )
+        )
+    return posterior
+
+
 def gaussian_inference(val: GaussianSum, state: KCState, normalizing_constant: float):
     spn = model_count(state.bdd, state.observes_all_hold, state.weights)
-    posterior = spn.get_posterior(
-        [v.var for v in val.rvs if isinstance(v, GaussianVariable)],
-        beta_priors=state.beta_priors,
-    )
+    posterior = get_gaussian_sum_posterior(val, spn, state)
     return normalize_posterior(posterior, normalizing_constant)
 
 
@@ -83,6 +131,7 @@ def beta_inference(val: BetaVariable, state: KCState, normalizing_constant: floa
     posterior = spn.get_posterior(
         [val.var],
         beta_priors=state.beta_priors,
+        dp_priors=state.dp_priors,
     )
     return normalize_posterior(posterior, normalizing_constant)
 
@@ -109,6 +158,29 @@ def enum_inference(val: EnumResult, state: KCState, normalizing_constant: float)
     return probs
 
 
+def union_inference(val: Union, state: KCState, normalizing_constant: float):
+    posterior = []
+    for formula, value in zip(val.formulae, val.values):
+        spn = model_count(
+            state.bdd,
+            formula & state.observes_all_hold,
+            state.weights,
+        )
+        guarded_posterior = spn.get_posterior(
+            [value.var],
+            beta_priors=state.beta_priors,
+            dp_priors=state.dp_priors,
+        )
+        for component in guarded_posterior:
+            new_likelihood = GradedLikelihood(
+                component.likelihood.log_likelihood - np.log(normalizing_constant),
+                component.likelihood.n_obs,
+            )
+            component.likelihood = new_likelihood
+        posterior.extend(guarded_posterior)
+    return posterior
+
+
 def run_kc(expr: PExpr):
     preprocess_state = preprocess(expr)
     val, state = kc(expr, preprocess_state)
@@ -131,6 +203,8 @@ def run_kc(expr: PExpr):
         ), normalizing_constant
     elif isinstance(val, BetaVariable):
         return beta_inference(val, state, normalizing_constant), normalizing_constant
+    elif isinstance(val, Union):
+        return union_inference(val, state, normalizing_constant), normalizing_constant
     else:
         raise TypeError(f"Cannot perform inference for value of type {type(val)}")
 
