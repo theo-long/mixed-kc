@@ -63,8 +63,12 @@ class DirichletProcessVariable:
 
             # If sits at same table as customer prev_draw, update table counts
             # Otherwise, continue to next customer
+            if prev_draw == self._n:
+                assignment = new_value
+            else:
+                assignment = self._assignment_exprs[prev_draw]
             guarded_table_assignments.append(
-                (table_expr & state.bdd.var(var), self._assignment_exprs[prev_draw])
+                (table_expr & state.bdd.var(var), assignment)
             )
 
             # In next iteration we did *not* sit at the current table, so add that to the table_expr
@@ -90,9 +94,12 @@ class DirichletProcessVariable:
 
         self._n += 1
 
-        assert len(guarded_table_assignments) == len(self._assignment_exprs)
+        # Expr representing table assignment of current draw
+        assignment_expr = merge_guarded_unions(guarded_table_assignments)
+        self._assignment_exprs.append(assignment_expr)  # type: ignore
 
-        return merge_guarded_unions(guarded_table_assignments)
+        assert len(guarded_table_assignments) == len(self._assignment_exprs)
+        return assignment_expr
 
 
 @dataclass
