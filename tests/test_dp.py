@@ -1,3 +1,5 @@
+import pytest
+
 from kc import (
     Affine,
     DirichletProcess,
@@ -11,10 +13,11 @@ from kc import (
 )
 
 
-def test_dirichlet_process():
+@pytest.mark.parametrize("alpha", [i / 10 for i in range(1, 21)])
+def test_dirichlet_process(alpha: float):
     expr = Let(
         "DP",
-        DirichletProcess(1.0, Gaussian(0, 1)),
+        DirichletProcess(alpha, Gaussian(0, 1)),
         Let(
             "x1",
             Draw(
@@ -33,22 +36,33 @@ def test_dirichlet_process():
                     Let(
                         "_",
                         ObserveReal(Sum(Var("x1"), Affine(Var("x2"), -1)), 0.0),
-                        Var("x3"),
+                        Sum(Var("x1"), Var("x3")),
                     ),
                 ),
             ),
         ),
     )
 
-    from kc.inference import preprocess, kc, model_count, get_normalizing_constant, compute_spn_likelihood
+    posterior, Z = run_kc(expr)
+    assert isinstance(posterior, list), "Expected mixture posterior density"
 
-    preprocess_state = preprocess(expr)
-    val, state = kc(expr, preprocess_state)
-    spn = model_count(state.bdd, state.observes_all_hold, state.weights)
-    Z = compute_spn_likelihood(spn, state)
+    # from kc.inference import (
+    #     preprocess,
+    #     kc,
+    #     model_count,
+    #     get_normalizing_constant,
+    #     compute_spn_likelihood,
+    # )
 
-    from IPython import embed
+    # preprocess_state = preprocess(expr)
+    # val, state = kc(expr, preprocess_state)
+    # spn = model_count(state.bdd, state.observes_all_hold, state.weights)
+    # Z = compute_spn_likelihood(spn, state)
 
-    embed()
+    # from IPython import embed
 
-test_dirichlet_process()
+    # embed()
+
+
+if __name__ == "__main__":
+    test_dirichlet_process(1.0)
