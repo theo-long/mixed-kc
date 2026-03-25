@@ -7,6 +7,7 @@ from kc.observation_weights import DirichletProcessWeight
 from kc.real_values import (
     Gaussian,
     GaussianSum,
+    GaussianVariable,
     RealVariable,
     Union,
     merge_guarded_unions,
@@ -25,7 +26,15 @@ class Draw(PExpr):
         return process.draw(env, state)
 
     def preprocess(self, env: dict[str, PExpr], state: PreprocessState):
-        return
+        process = self.process.preprocess(env, state)
+        if not isinstance(process, DirichletProcessVariable):
+            raise ValueError("Can only Draw from a DirichletProcess")
+        var = state.rv_counter.next_variable(process.base.__class__)  # type: ignore
+        return GaussianSum(
+            frozenset(
+                [GaussianVariable(var, scale=process.base.std, shift=process.base.mean)]
+            )
+        )
 
 
 class DirichletProcessVariable:
@@ -108,7 +117,8 @@ class DirichletProcess(PExpr):
     base: Gaussian
 
     def preprocess(self, env: dict[str, PExpr], state):
-        return
+        var = state.rv_counter.next_dp()
+        return DirichletProcessVariable(var, self.alpha, self.base)
 
     def kc(self, env, state):
         var = state.next_dp()

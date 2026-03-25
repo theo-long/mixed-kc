@@ -113,10 +113,7 @@ class Var(AExpr):
         return env[self.var]
 
     def preprocess(self, env, state):
-        substitued_value = env[self.var]
-        if substitued_value is not None:
-            substitued_value = substitued_value.preprocess(env, state)
-        return substitued_value
+        return env[self.var]
 
 
 @dataclass

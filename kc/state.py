@@ -13,6 +13,7 @@ from kc.real_values import (
 
 class RandomVariableCounter:
     def __init__(self) -> None:
+        self.dps = 0
         self.rv_counter = -1  # Start at -1 so first return is 0
         self.rvs: dict[int, DistributionWithDensity] = {}
 
@@ -27,6 +28,10 @@ class RandomVariableCounter:
             if isinstance(rv, variable_type):
                 count += 1
         return count
+
+    def next_dp(self):
+        self.dps += 1
+        return self.dps
 
 
 class TruncationCounter:
@@ -51,7 +56,6 @@ class KCState(RandomVariableCounter):
     def __init__(self, preprocess_state: PreprocessState):
         self.bdd = _bdd.BDD()
         self.flips = 0
-        self.dps = 0
         self.weights: dict[
             int,
             tuple[
@@ -133,10 +137,6 @@ class KCState(RandomVariableCounter):
     def next_flip(self):
         self.flips += 1
         return self.flips
-    
-    def next_dp(self):
-        self.dps += 1
-        return self.dps
 
     def set_weight(
         self,
