@@ -164,12 +164,14 @@ class GaussianVariable(AffineTransformable):
         new_shift = self.shift * scale + shift
         return GaussianVariable(self.var, new_scale, new_shift)
 
-    def __add__(self, other: "GaussianVariable") -> "GaussianVariable":
+    def __add__(self, other: "GaussianVariable") -> "GaussianVariable | RealConstant":
         if not isinstance(other, GaussianVariable):
             raise TypeError("Can only add GaussianVariable to GaussianVariable")
         if self.var == other.var:
             new_scale = self.scale + other.scale
             new_shift = self.shift + other.shift
+            if new_scale == 0:
+                return RealConstant(0.0)
             return GaussianVariable(self.var, new_scale, new_shift)
         else:
             raise ValueError("Cannot add GaussianVariables with different vars")
@@ -374,6 +376,10 @@ class GaussianSum(RealVariable, AffineTransformable):
                 )
             )
 
+        # If sum is empty/contains only RealConstant, then val must be 0
+        if len(new_vars) == 0:
+            return state.bdd.true if val == 0. else state.bdd.false
+
         node_name = state._get_symbolic_observe_eq_node_name(new_vars, val)
         state.bdd.declare(node_name)
         state.set_weight(
@@ -411,7 +417,12 @@ class GaussianSum(RealVariable, AffineTransformable):
                 if rv.var in new_vars:
                     existing_var = new_vars[rv.var]
                     combined_var = existing_var + rv
-                    new_vars[rv.var] = combined_var
+                    if isinstance(combined_var, RealConstant):
+                        assert combined_var.value == 0.0
+                        # Sum is 0 so can remove this var
+                        new_vars.pop(rv.var)
+                    else:
+                        new_vars[rv.var] = combined_var
                 else:
                     new_vars[rv.var] = rv
             elif isinstance(rv, Union):
