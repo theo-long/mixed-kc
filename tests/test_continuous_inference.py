@@ -127,7 +127,7 @@ def test_mixture_gaussian_posterior():
     assert len(posterior) == 2
     assert np.allclose(sum(np.exp(c.likelihood.log_likelihood) for c in posterior), 1.0)
 
-    # Slightly more likely to observe g1 + g2 = 1 than 2 * g1 = 2, so mixture weight slightly higher than 0.75
+    # Slightly more likely to observe g1 + g2 = 1 than 2 * g1 = 1, so mixture weight slightly higher than 0.75
     assert np.allclose(posterior[0].gaussian.mu, 0.5)
     assert np.allclose(posterior[0].gaussian.cov, 0.5)
     assert np.allclose(
@@ -136,6 +136,101 @@ def test_mixture_gaussian_posterior():
 
     assert np.allclose(posterior[1].gaussian.mu, 0.5)
     assert np.allclose(posterior[1].gaussian.cov, 0.0)
+    assert np.allclose(
+        posterior[1].likelihood.log_likelihood, np.log(0.21078736972700463)
+    )
+
+
+def test_mixture_gaussian_sum_posterior():
+    # Same as test above, except now we get posterior of *sum* of gaussian variables
+    p = Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 1),
+            Let(
+                "flip",
+                Flip(0.75),
+                Let(
+                    "x",
+                    IfThenElse(
+                        Var("flip"),
+                        Sum(Var("g1"), Var("g2")),
+                        Affine(Var("g1"), 2.0),
+                    ),
+                    Let("_", ObserveReal(Var("x"), 1.0), Sum(Var("g1"), Var("g2"))),
+                ),
+            ),
+        ),
+    )
+    posterior, Z = run_kc(p)
+
+    assert isinstance(posterior, list)
+    assert len(posterior) == 2
+    assert np.allclose(sum(np.exp(c.likelihood.log_likelihood) for c in posterior), 1.0)
+
+    # In the first branch, we observe g1 + g2 = 1, so posterior has mean 1, 0 covariance
+    assert np.allclose(posterior[0].gaussian.mu, 1.0)
+    assert np.allclose(posterior[0].gaussian.cov, 0.0)
+    assert np.allclose(
+        posterior[0].likelihood.log_likelihood, np.log(0.7892126302729954)
+    )
+
+    # In the second branch, we observe g1 = 0.5
+    # so posterior has mean 0.5 and covariance 1 since it is g2 + 0.5, g2 ~ N(0, 1)
+    assert np.allclose(posterior[1].gaussian.mu, 0.5)
+    assert np.allclose(posterior[1].gaussian.cov, 1.0)
+    assert np.allclose(
+        posterior[1].likelihood.log_likelihood, np.log(0.21078736972700463)
+    )
+
+
+def test_mixture_gaussian_difference_posterior():
+    # Same as test above, except now we get posterior of *difference* of gaussian variables
+    p = Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 1),
+            Let(
+                "flip",
+                Flip(0.75),
+                Let(
+                    "x",
+                    IfThenElse(
+                        Var("flip"),
+                        Sum(Var("g1"), Var("g2")),
+                        Affine(Var("g1"), 2.0),
+                    ),
+                    Let(
+                        "_",
+                        ObserveReal(Var("x"), 1.0),
+                        Sum(Var("g1"), Affine(Var("g2"), -1)),
+                    ),
+                ),
+            ),
+        ),
+    )
+    posterior, Z = run_kc(p)
+
+    assert isinstance(posterior, list)
+    assert len(posterior) == 2
+    assert np.allclose(sum(np.exp(c.likelihood.log_likelihood) for c in posterior), 1.0)
+
+    # In the first branch, we observe g1 + g2 = 1, so g1 - g2 = g1 + g2 - 2 * g2 = 1 - 2 * g2
+    # In this case, g2 has posterior N(0.5, 0.5), so g1 - g2 ~ N(0, 2.0) (2.0 = variance = std ** 2, so *2 => var * 4)
+    assert np.allclose(posterior[0].gaussian.mu, 0.0)
+    assert np.allclose(posterior[0].gaussian.cov, 2.0)
+    assert np.allclose(
+        posterior[0].likelihood.log_likelihood, np.log(0.7892126302729954)
+    )
+
+    # In the second branch, we observe g1 = 0.5
+    # so posterior has mean 0.5 and covariance 1 since it is 0.5 - g2, g2 ~ N(0, 1)
+    assert np.allclose(posterior[1].gaussian.mu, 0.5)
+    assert np.allclose(posterior[1].gaussian.cov, 1.0)
     assert np.allclose(
         posterior[1].likelihood.log_likelihood, np.log(0.21078736972700463)
     )
