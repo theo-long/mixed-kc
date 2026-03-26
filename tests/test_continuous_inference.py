@@ -1,3 +1,5 @@
+from turtle import pos
+
 import numpy as np
 
 from kc import (
@@ -233,4 +235,68 @@ def test_mixture_gaussian_difference_posterior():
     assert np.allclose(posterior[1].gaussian.cov, 1.0)
     assert np.allclose(
         posterior[1].likelihood.log_likelihood, np.log(0.21078736972700463)
+    )
+
+
+def test_union_inference():
+    p = Let(
+        "g1",
+        Gaussian(0, 1),
+        Let(
+            "g2",
+            Gaussian(0, 1),
+            Let(
+                "flip",
+                Flip(0.75),
+                Let(
+                    "x",
+                    IfThenElse(
+                        Var("flip"),
+                        Sum(Var("g1"), Var("g2")),
+                        Affine(Var("g1"), 2.0),
+                    ),
+                    Let(
+                        "_",
+                        ObserveReal(Var("x"), 1.0),
+                        IfThenElse(Flip(0.5), Var("g1"), Var("g2")),  # type: ignore
+                    ),
+                ),
+            ),
+        ),
+    )
+    posterior, Z = run_kc(p)
+
+    assert isinstance(posterior, list)
+    # Two union components (g1, g2), and each one has a mixture posterior
+    assert len(posterior) == 4
+    assert np.allclose(sum(np.exp(c.likelihood.log_likelihood) for c in posterior), 1.0)
+
+    component_weights = [
+        np.log(0.5 * 0.7892126302729954),
+        np.log(0.5 * 0.21078736972700463),
+        np.log(0.5 * 0.7892126302729954),
+        np.log(0.5 * 0.21078736972700463),
+    ]
+    assert np.allclose(
+        [c.likelihood.log_likelihood for c in posterior], component_weights
+    )
+
+    component_means = [
+        0.5,
+        0.5,
+        0.5,
+        0.0,
+    ]
+    assert np.allclose(
+        np.concat([c.gaussian.mu for c in posterior]).squeeze(), component_means
+    )
+
+    component_covs = [
+        0.5,
+        0.0,
+        0.5,
+        1.0,
+    ]
+    assert np.allclose(
+        np.concat([c.gaussian.cov for c in posterior]).squeeze(), component_covs
     )
