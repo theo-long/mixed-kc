@@ -99,6 +99,7 @@ class DirichletProcessVariable:
                 # But this means the contributions from the cluster assignment of draw 2
                 # which must sit at table 1 or 2 (since we know ~table_2) *doesn't get counted*
                 # and leads to wrong probabilities
+                # One thing that would make this work is using MDD
                 false_weight = 1.0
 
             state.set_weight(
