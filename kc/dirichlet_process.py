@@ -91,6 +91,14 @@ class DirichletProcessVariable:
                     (table_expr, self._assignment_exprs[0])
                 )
             else:
+                # PROBLEM: false weight = 1.0 doesn't work
+                # Sometimes in a BDD we might select the false branch of some DP expr
+                # e.g. we have ~DP_1_draw_2_table_2
+                # If we do not have any additional conditions on the assignments, 
+                # then bdd vars after this can be *removed* from the BDD (because all paths go true)
+                # But this means the contributions from the cluster assignment of draw 2
+                # which must sit at table 1 or 2 (since we know ~table_2) *doesn't get counted*
+                # and leads to wrong probabilities
                 false_weight = 1.0
 
             state.set_weight(
