@@ -108,7 +108,9 @@ def get_gaussian_sum_posterior(
             mu, cov = _fill_in_missing_gaussian_vars(rvs, component)
         else:
             mu, cov = component.gaussian.mu, component.gaussian.cov
-            assert rvs == component.gaussian.scope, "Scope and rvs should be in the same order"
+            assert rvs == component.gaussian.scope, (
+                "Scope and rvs should be in the same order"
+            )
 
         scale, shift = get_expr_distribution(mu, cov, v, b)
         posterior.append(
@@ -166,11 +168,18 @@ def union_inference(val: Union, state: KCState, normalizing_constant: float):
             formula & state.observes_all_hold,
             state.weights,
         )
-        guarded_posterior = spn.get_posterior(
-            [value.var],
-            beta_priors=state.beta_priors,
-            dp_priors=state.dp_priors,
-        )
+        if isinstance(value, GaussianSum):
+            guarded_posterior = get_gaussian_sum_posterior(value, spn, state)
+        elif isinstance(value, (BetaVariable, GaussianVariable)):
+            guarded_posterior = spn.get_posterior(
+                [value.var],
+                beta_priors=state.beta_priors,
+                dp_priors=state.dp_priors,
+            )
+        else:
+            raise TypeError(
+                f"Cannot perform inference on value in union of type {type(value)}"
+            )
         for component in guarded_posterior:
             new_likelihood = GradedLikelihood(
                 component.likelihood.log_likelihood - np.log(normalizing_constant),
