@@ -162,6 +162,7 @@ def enum_inference(val: EnumResult, state: KCState, normalizing_constant: float)
 
 def union_inference(val: Union, state: KCState, normalizing_constant: float):
     posterior = []
+    n_obs = float("inf")
     for formula, value in zip(val.formulae, val.values):
         spn = model_count(
             state.bdd,
@@ -181,12 +182,20 @@ def union_inference(val: Union, state: KCState, normalizing_constant: float):
                 f"Cannot perform inference on value in union of type {type(value)}"
             )
         for component in guarded_posterior:
-            new_likelihood = GradedLikelihood(
-                component.likelihood.log_likelihood - np.log(normalizing_constant),
-                component.likelihood.n_obs,
-            )
-            component.likelihood = new_likelihood
-        posterior.extend(guarded_posterior)
+            # If we see a new component with a lower epsilon power
+            # We should prefer it and ignore anything with higher power
+            # Otherwise, only add component if it matches best power so far
+            if component.likelihood.n_obs < n_obs:
+                posterior.clear()
+                n_obs = component.likelihood.n_obs
+
+            if component.likelihood.n_obs == n_obs:
+                new_likelihood = GradedLikelihood(
+                    component.likelihood.log_likelihood - np.log(normalizing_constant),
+                    component.likelihood.n_obs,
+                )
+                component.likelihood = new_likelihood
+                posterior.append(component)
     return posterior
 
 
