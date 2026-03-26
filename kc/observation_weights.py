@@ -281,6 +281,9 @@ class DirichletProcessWeight(WeightType):
             # Customer 0 always sits at table 0, but this is never explicitly assigned in weight
             self.cluster_assignments[k][0] = 0
 
+    def __str__(self) -> str:
+        return f"dp={self.cluster_assignments}"
+
     @property
     def scope(self):
         return set()
@@ -423,14 +426,16 @@ class ObservationWeights:
         if self.likelihood == 0:
             return "0.0"
 
-        if not self.scope:
-            return f"{self.likelihood:.3f}"
-
-        if len(self.scope) == 1:
+        if len(self.scope) <= 1:
+            rep_str = f"({self.likelihood}"
             for dataclass_field in fields(self):
                 weight = getattr(self, dataclass_field.name)
                 if isinstance(weight, WeightType) and weight.scope:
-                    return f"({self.likelihood},{str(weight)})"
+                    rep_str += f",{str(weight)}"
+            if self.dirichlet_process_obs.cluster_assignments:
+                rep_str += f",{str(self.dirichlet_process_obs)}"
+
+            return rep_str + ")"
 
         rep_str = f"Obs(likelihood={self.likelihood:.3f}, scope={self.scope}"
         for dataclass_field in fields(self):
@@ -438,6 +443,9 @@ class ObservationWeights:
             if isinstance(weight, WeightType) and weight.scope:
                 rep_str += ", "
                 rep_str += str(weight)
+
+        if self.dirichlet_process_obs.cluster_assignments:
+            rep_str += f",{str(self.dirichlet_process_obs)}"
         return rep_str + ")"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
