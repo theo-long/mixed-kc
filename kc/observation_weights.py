@@ -283,9 +283,6 @@ class DirichletProcessWeight(WeightType):
 
     @property
     def scope(self):
-        # The scope of the DP weight should be all of the Gaussian RV draws from it
-        if self.cluster_assignments:
-            raise NotImplementedError
         return set()
 
     def __mul__(self, other: "DirichletProcessWeight"):
