@@ -1,5 +1,3 @@
-from turtle import pos
-
 import numpy as np
 
 from kc import (
