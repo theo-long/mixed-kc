@@ -1,6 +1,6 @@
 from . import dsl
-from .dirichlet_process import DirichletProcess, Draw
 from .config import settings
+from .dirichlet_process import DirichletProcess, Draw
 from .inference import get_spn, run_kc
 from .real_values import (
     Affine,
@@ -11,6 +11,7 @@ from .real_values import (
 )
 from .terms import (
     Const,
+    Equality,
     Flip,
     IfThenElse,
     Inequality,
@@ -18,7 +19,6 @@ from .terms import (
     Observe,
     ObserveReal,
     Var,
-    Equality,
 )
 
 __all__ = [
@@ -39,4 +39,7 @@ __all__ = [
     "Gaussian",
     "Sum",
     "dsl",
+    "DirichletProcess",
+    "Draw",
+    "Equality",
 ]
