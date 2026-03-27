@@ -1,6 +1,7 @@
-import numpy as np
-import sys
 import os
+import sys
+
+import numpy as np
 
 # Add project root to path
 sys.path.append(os.getcwd())

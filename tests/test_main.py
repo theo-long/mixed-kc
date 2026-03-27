@@ -1,21 +1,22 @@
 import pytest
+from scipy.stats import norm
+
 from kc import (
     Affine,
     Beta,
     Const,
     Flip,
-    TruncatableGaussian,
     Gaussian,
     IfThenElse,
     Inequality,
     Let,
     Observe,
     ObserveReal,
+    TruncatableGaussian,
     Var,
     run_kc,
     settings,
 )
-from scipy.stats import norm
 from kc.real_values import Sum
 from kc.terms import Categorical, EnumType, Equality
 

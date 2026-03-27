@@ -1,5 +1,4 @@
-from kc import get_spn
-from kc import dsl, run_kc
+from kc import dsl, get_spn, run_kc
 
 
 def discrete_example():
