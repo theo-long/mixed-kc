@@ -57,7 +57,13 @@ def test_dirichlet_process(alpha: float):
     p_existing = 2 / (alpha + 2)
 
     assert np.allclose(posterior[0].likelihood.log_likelihood, np.log(p_new_draw))
-    assert np.allclose(posterior[0].likelihood.log_likelihood, np.log(p_existing))
+    assert np.allclose(posterior[1].likelihood.log_likelihood, np.log(p_existing))
+
+    assert np.allclose(posterior[0].gaussian.mu, 1.0)
+    assert np.allclose(posterior[1].gaussian.mu, 2.0)
+
+    assert np.allclose(posterior[0].gaussian.cov, 1.0)
+    assert np.allclose(posterior[1].gaussian.cov, 0.0)
 
 
 @pytest.mark.parametrize("alpha", [0.1, 1, 4])
