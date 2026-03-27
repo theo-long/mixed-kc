@@ -378,7 +378,7 @@ class GaussianSum(RealVariable, AffineTransformable):
 
         # If sum is empty/contains only RealConstant, then val must be 0
         if len(new_vars) == 0:
-            return state.bdd.true if val == 0. else state.bdd.false
+            return state.bdd.true if val == 0.0 else state.bdd.false
 
         node_name = state._get_symbolic_observe_eq_node_name(new_vars, val)
         state.bdd.declare(node_name)
