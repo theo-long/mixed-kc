@@ -17,8 +17,15 @@ class DirichletPartitionWeight(WeightType):
     def scope(self):
         return set(self.partitions.keys())
 
-    def __mul__(self: Self, other) -> Self:
-        raise NotImplementedError()
+    def __mul__(self: Self, other: Self) -> "DirichletPartitionWeight | None":
+        partitions = self.partitions
+        for key, partition in other.partitions.items():
+            if key in partitions:
+                partition = partitions[key] * partition
+            if partition is None:
+                return
+            partitions[key] = partition
+        return DirichletPartitionWeight(partitions)
 
     def get_log_likelihood(self, **kwargs) -> tuple[float | None, int]:
         raise NotImplementedError()
