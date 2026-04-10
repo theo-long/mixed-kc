@@ -1,17 +1,68 @@
 from dataclasses import dataclass
+from typing import Self
 
 import dd.autoref as _bdd
 
-from kc.base import PExpr
-from kc.real_values import (
-    Gaussian,
-    GaussianSum,
-    GaussianVariable,
-    RealVariable,
-    Union,
-    merge_guarded_unions,
-)
+from kc.base import PExpr, SupportsEqualityComparison
+from kc.observation_weights import Posterior, WeightType
+from kc.partition import Equal, NotEqual, PartitionEnumerator
 from kc.state import KCState, PreprocessState
+
+
+@dataclass
+class DirichletPartitionWeight(WeightType):
+    partitions: dict[int, PartitionEnumerator]
+
+    @property
+    def scope(self):
+        return set(self.partitions.keys())
+
+    def __mul__(self: Self, other) -> Self:
+        raise NotImplementedError()
+
+    def get_log_likelihood(self, **kwargs) -> tuple[float | None, int]:
+        raise NotImplementedError()
+
+    def get_posterior(self, var_selection: list[int], **kwargs) -> Posterior:
+        raise NotImplementedError()
+
+
+@dataclass
+class DirichletProcessDraw(SupportsEqualityComparison):
+    draw_number: int
+    process: "DirichletProcessVariable"
+
+    def equals(self, other: Self, state: KCState) -> _bdd._Ref:
+        if self.process.var != other.process.var:
+            raise ValueError(
+                f"Cannot compare draws from different Dirichlet Processes, got {self.process.var}!={other.process.var}"
+            )
+        if self.draw_number == other.draw_number:
+            return state.bdd.true
+        sorted_draw_numbers = (
+            min(self.draw_number, other.draw_number),
+            max(self.draw_number, other.draw_number),
+        )
+        var_name = (
+            f"DP{self.process.var}{sorted_draw_numbers[0]}={sorted_draw_numbers[1]}"
+        )
+        state.bdd.declare(var_name)
+
+        true_constraint, false_constraint = (
+            Equal(self.draw_number, other.draw_number),
+            NotEqual(self.draw_number, other.draw_number),
+        )
+        true_weight, false_weight = (
+            DirichletPartitionWeight(
+                {self.process.var: PartitionEnumerator(true_constraint)}
+            ),
+            DirichletPartitionWeight(
+                {self.process.var: PartitionEnumerator(false_constraint)}
+            ),
+        )
+        state.set_weight(var_name, true_weight, false_weight)
+
+        return state.bdd.var(var_name)
 
 
 @dataclass
@@ -28,116 +79,30 @@ class Draw(PExpr):
         process = self.process.preprocess(env, state)
         if not isinstance(process, DirichletProcessVariable):
             raise ValueError("Can only Draw from a DirichletProcess")
-        var = state.rv_counter.next_variable(process.base.__class__)  # type: ignore
-        return GaussianSum(
-            frozenset(
-                [GaussianVariable(var, scale=process.base.std, shift=process.base.mean)]
-            )
-        )
+        return process.draw(env, state)
 
 
 class DirichletProcessVariable:
-    def __init__(self, var: int, alpha: float, base: Gaussian):
+    def __init__(self, var: int, alpha: float):
         self.var = var
         self.alpha = alpha
-        self.base = base
-        self._assignment_exprs: list[Union[GaussianSum]] = []
-        self._table_number_exprs: dict[int, _bdd._Ref] = {}
-        self._n = 0
+        self._counter: int = 0
 
-    def draw(self, env: dict[str, PExpr], state: KCState):
-        # TODO - this is super inefficient because we represent every possible cluster partitioning
-        # Is there anything better we can do?
-
-        # We draw a new value from the base distribution
-        new_value = self.base.kc(env, state)
-
-        # If no draws yet, must sit at new table
-        if self._n == 0:
-            self._n += 1
-            self._assignment_exprs.append(Union((state.bdd.true,), (new_value,)))
-            self._table_number_exprs[1] = state.bdd.true
-            return new_value
-
-        # We iterate through all the existing customers
-        draw_number = self._n
-        # Note that in our representation, table_number = k represents 'the same table as customer k'
-        table_number = draw_number
-        guarded_table_assignments: list[
-            tuple[_bdd._Ref, Union[RealVariable] | RealVariable]
-        ] = []
-        table_expr = state.bdd.true
-        while table_number > 0:
-            # Variable representing customer draw_number sitting at same table as table_number
-            var = f"DP_{self.var}_draw_{draw_number}_table_{table_number}"
-            state.bdd.declare(var)
-
-            # If sits at same table as customer table_number, update table counts
-            # Otherwise, continue to next customer
-            if table_number == self._n:
-                assignment = new_value
-                assignment_prob = self.alpha / (self.alpha + self._n)
-            else:
-                assignment = self._assignment_exprs[table_number]
-                assignment_prob = 1 / (table_number)
-
-            state.set_weight(
-                var,
-                assignment_prob,
-                1 - assignment_prob,
-            )
-
-            guarded_table_assignments.append(
-                (table_expr & state.bdd.var(var), assignment)
-            )
-
-            # In next iteration we did *not* sit at the current table, so add that to the table_expr
-            table_expr = table_expr & ~state.bdd.var(var)
-
-            # If we do not choose draw 1, then we *must* choose draw 0
-            if table_number == 1:
-                # add the guard expr corresponding to picking table 0
-                guarded_table_assignments.append(
-                    (table_expr, self._assignment_exprs[0])
-                )
-                # '# tables == 1' = 'prev # tables == 1 & not new_table'
-                self._table_number_exprs[table_number] = self._table_number_exprs[
-                    table_number
-                ] & (
-                    ~state.bdd.var(
-                        f"DP_{self.var}_draw_{draw_number}_table_{draw_number}"
-                    )
-                )
-            else:
-                # Expr representing '# tables is table_number' is just 'prev. # tables is table_number - 1 & new_table'
-                self._table_number_exprs[table_number] = self._table_number_exprs[
-                    table_number - 1
-                ] & state.bdd.var(
-                    f"DP_{self.var}_draw_{draw_number}_table_{draw_number}"
-                )
-
-            table_number -= 1
-
-        self._n += 1
-
-        # Expr representing table assignment of current draw
-        assignment_expr = merge_guarded_unions(guarded_table_assignments)
-        self._assignment_exprs.append(assignment_expr)  # type: ignore
-
-        assert len(guarded_table_assignments) == len(self._assignment_exprs)
-        return assignment_expr
+    def draw(self, env, state):
+        draw_number = self._counter
+        self._counter += 1
+        return DirichletProcessDraw(draw_number, self)
 
 
 @dataclass
 class DirichletProcess(PExpr):
     alpha: float
-    base: Gaussian
 
     def preprocess(self, env: dict[str, PExpr], state):
         var = state.rv_counter.next_dp()
-        return DirichletProcessVariable(var, self.alpha, self.base)
+        return DirichletProcessVariable(var, self.alpha)
 
     def kc(self, env, state):
         var = state.next_dp()
         state.dp_priors[var] = self.alpha
-        return DirichletProcessVariable(var, self.alpha, self.base)
+        return DirichletProcessVariable(var, self.alpha)

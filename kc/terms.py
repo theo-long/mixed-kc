@@ -2,7 +2,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
-from kc.base import AExpr, PExpr
+from kc.base import AExpr, PExpr, SupportsEqualityComparison
+from kc.dirichlet_process import DirichletProcessDraw
 from kc.observation_weights import BetaWeight
 from kc.real_values import (
     BetaVariable,
@@ -33,12 +34,24 @@ class EnumType:
 
 
 @dataclass
-class EnumResult:
+class EnumResult(SupportsEqualityComparison):
     enum_type: EnumType
     bits: tuple
 
     def preprocess(self, env, state):
         return self
+
+    def equals(self, other: "EnumResult", state: "KCState"):
+        if self.enum_type != other.enum_type:
+            raise TypeError(
+                f"Cannot compare different Enum types: {self.enum_type.name} and {other.enum_type.name}"
+            )
+
+        eq_bdd = state.bdd.true
+        for l_bit, r_bit in zip(self.bits, other.bits):
+            bits_eq = (l_bit & r_bit) | (~l_bit & ~r_bit)
+            eq_bdd = eq_bdd & bits_eq
+        return eq_bdd
 
 
 @dataclass
@@ -68,21 +81,16 @@ class Equality(PExpr):
         r_res = self.right.kc(env, state)
 
         if isinstance(l_res, EnumResult) and isinstance(r_res, EnumResult):
-            if l_res.enum_type != r_res.enum_type:
-                raise TypeError(
-                    f"Cannot compare different Enum types: {l_res.enum_type.name} and {r_res.enum_type.name}"
-                )
-
-            eq_bdd = state.bdd.true
-            for l_bit, r_bit in zip(l_res.bits, r_res.bits):
-                bits_eq = (l_bit & r_bit) | (~l_bit & ~r_bit)
-                eq_bdd = eq_bdd & bits_eq
-            return eq_bdd
+            return l_res.equals(r_res, state)
+        elif isinstance(l_res, DirichletProcessDraw) and isinstance(
+            r_res, DirichletProcessDraw
+        ):
+            return l_res.equals(r_res, state)
         elif hasattr(l_res, "to_expr") and hasattr(r_res, "to_expr"):
             return (l_res & r_res) | (~l_res & ~r_res)  # type: ignore
         else:
             raise TypeError(
-                f"Equality only supported between Enums or Booleans, got {type(l_res)} and {type(r_res)}"
+                f"Equality only supported between Enums, Booleans, and Dirichlet Draws, got {type(l_res)} and {type(r_res)}"
             )
 
     def preprocess(self, env, state):

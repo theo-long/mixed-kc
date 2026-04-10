@@ -21,8 +21,8 @@ class NotEqual:
 PartitionCondition = Equal | NotEqual
 
 
-class Partition:
-    def __init__(self):
+class PartitionEnumerator:
+    def __init__(self, *conditions: PartitionCondition):
         self._conditions: set[PartitionCondition] = set()
         # The union find structure keeps track of which elements must be in the same subset of the partition
         self._union_find = DisjointSet()
@@ -30,8 +30,11 @@ class Partition:
         # Note that the nodes of the constraint graph are the *groups* in the union find structure
         self._constraint_graph = nx.Graph()
 
+        for condition in conditions:
+            self.add_condition(condition)
+
     def clone(self):
-        new_partition = Partition()
+        new_partition = PartitionEnumerator()
         new_partition._conditions = self._conditions.copy()
         new_partition._union_find = copy.deepcopy(self._union_find)
         new_partition._constraint_graph = self._constraint_graph.copy()
@@ -111,7 +114,7 @@ class Partition:
             self._union_find.merge(fst, snd)
             new_node = self._union_find[fst]
             merged_node = fst_group if fst_group != new_node else snd_group
-            nx.algorithms.minors.contracted_nodes(
+            nx.contracted_nodes(
                 self._constraint_graph,
                 new_node,
                 merged_node,
@@ -126,10 +129,10 @@ class Partition:
         self._constraint_graph.add_edge(self._union_find[fst], self._union_find[snd])
         return not self._union_find.connected(fst, snd)
 
-    def __mul__(self, other: "Partition") -> "Partition":
+    def __mul__(self, other: "PartitionEnumerator") -> "PartitionEnumerator | None":
         new_partition = self.clone()
         for condition in other._conditions:
-            valid_partition = new_partition.add_condition(condition)
-            if not valid_partition:
+            valid = new_partition.add_condition(condition)
+            if not valid:
                 return None
         return new_partition
