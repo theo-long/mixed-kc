@@ -16,6 +16,7 @@ from .terms import (
     IfThenElse,
     Inequality,
     Let,
+    Not,
     Observe,
     ObserveReal,
     Var,
@@ -42,4 +43,5 @@ __all__ = [
     "DirichletProcess",
     "Draw",
     "Equality",
+    "Not",
 ]

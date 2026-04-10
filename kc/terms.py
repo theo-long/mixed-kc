@@ -2,6 +2,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
+import dd.autoref as _bdd
+
 from kc.base import AExpr, PExpr, SupportsEqualityComparison
 from kc.dirichlet_process import DirichletProcessDraw
 from kc.observation_weights import BetaWeight
@@ -96,6 +98,23 @@ class Equality(PExpr):
     def preprocess(self, env, state):
         self.left.preprocess(env, state)
         self.right.preprocess(env, state)
+        return
+
+
+@dataclass
+class Not:
+    expr: PExpr
+
+    def kc(self, env, state):
+        expr = self.expr.kc(env, state)
+        if not isinstance(expr, _bdd._Ref):
+            raise TypeError(
+                f"Can only call Not on something that returns a boolean, got {type(expr)}"
+            )
+        return ~expr
+
+    def preprocess(self, env, state):
+        self.expr.preprocess(env, state)
         return
 
 
