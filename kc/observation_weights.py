@@ -7,6 +7,7 @@ import scipy.linalg
 from scipy.special import betaln
 
 from kc.gaussian_math import get_gaussian_posterior, log_score_singular
+from kc.partition import PartitionEnumerator
 
 
 def _build_gaussian_observation_matrix(
@@ -64,7 +65,7 @@ class WeightType(ABC):
     def scope(self) -> set[int]: ...
 
     @abstractmethod
-    def __mul__(self: Self, other) -> Self: ...
+    def __mul__(self: Self, other) -> Self | None: ...
 
     @abstractmethod
     def get_log_likelihood(self, **kwargs) -> tuple[float | None, int]: ...
@@ -265,6 +266,31 @@ class TruncatedGaussianWeight(WeightType):
 
 
 @dataclass
+class DirichletPartitionWeight(WeightType):
+    partitions: dict[int, PartitionEnumerator] = field(default_factory=dict)
+
+    @property
+    def scope(self):
+        return set(self.partitions.keys())
+
+    def __mul__(self: Self, other: Self) -> "DirichletPartitionWeight | None":
+        partitions = self.partitions
+        for key, partition in other.partitions.items():
+            if key in partitions:
+                partition = partitions[key] * partition
+            if partition is None:
+                return
+            partitions[key] = partition
+        return DirichletPartitionWeight(partitions)
+
+    def get_log_likelihood(self, **kwargs) -> tuple[float | None, int]:
+        raise NotImplementedError()
+
+    def get_posterior(self, var_selection: list[int], **kwargs) -> Posterior:
+        raise NotImplementedError()
+
+
+@dataclass
 class FullPosterior:
     likelihood: GradedLikelihood
     gaussian: GaussianPosterior = field(default_factory=GaussianPosterior)
@@ -303,6 +329,9 @@ class ObservationWeights:
     beta_obs: BetaWeight = field(default_factory=BetaWeight)
     truncated_gaussian_obs: TruncatedGaussianWeight = field(
         default_factory=TruncatedGaussianWeight
+    )
+    dirichlet_process_obs: DirichletPartitionWeight = field(
+        default_factory=DirichletPartitionWeight
     )
 
     @property
@@ -348,11 +377,15 @@ class ObservationWeights:
         return rep_str + ")"
 
     def __mul__(self, other: "ObservationWeights") -> "ObservationWeights":
+        dp_obs = self.dirichlet_process_obs * other.dirichlet_process_obs
+        if dp_obs is None:
+            return ObservationWeights.from_weight(0.0)
         return ObservationWeights(
             self.likelihood * other.likelihood,
             self.gaussian_obs * other.gaussian_obs,
             self.beta_obs * other.beta_obs,
             self.truncated_gaussian_obs * other.truncated_gaussian_obs,
+            dp_obs,
         )
 
     def __add__(self, other: "ObservationWeights"):
