@@ -1,5 +1,6 @@
 import copy
 from dataclasses import dataclass
+from typing import Generator
 
 import networkx as nx
 from multiset import Multiset
@@ -19,6 +20,7 @@ class NotEqual:
 
 
 PartitionCondition = Equal | NotEqual
+Partition = Multiset[int]
 
 
 class PartitionEnumerator:
@@ -33,6 +35,10 @@ class PartitionEnumerator:
         for condition in conditions:
             self.add_condition(condition)
 
+    @property
+    def n(self):
+        return len(self._union_find)
+
     def clone(self):
         new_partition = PartitionEnumerator()
         new_partition._conditions = self._conditions.copy()
@@ -40,7 +46,7 @@ class PartitionEnumerator:
         new_partition._constraint_graph = self._constraint_graph.copy()
         return new_partition
 
-    def enumerate(self):
+    def enumerate(self) -> Generator[Partition]:
         # This is an assignment of *groups* in the union find structure to partition indices
         # This is not an assignment of individual nodes to partition indices
         partition: list[list[int]] = []
@@ -55,7 +61,7 @@ class PartitionEnumerator:
 
     def _enumerate_recursive(
         self, groups_to_place: list[int], partition: list[list[int]]
-    ):
+    ) -> Generator[Partition]:
         if not groups_to_place:
             yield Multiset(
                 sum(self._union_find.subset_size(group) for group in p)

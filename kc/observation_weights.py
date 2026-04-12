@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
-from typing import Self
+from typing import Self, cast
 
 import numpy as np
 import scipy.linalg
-from scipy.special import betaln
+from scipy.special import betaln, loggamma, logsumexp
 
 from kc.gaussian_math import get_gaussian_posterior, log_score_singular
 from kc.partition import PartitionEnumerator
@@ -283,10 +283,28 @@ class DirichletPartitionWeight(WeightType):
             partitions[key] = partition
         return DirichletPartitionWeight(partitions)
 
-    def get_log_likelihood(self, **kwargs) -> tuple[float | None, int]:
-        raise NotImplementedError()
+    def get_log_likelihood(self, **kwargs):
+        if not self.partitions:
+            return 0.0, 0
+        log_likelihood = 0
+        dp_priors: dict[int, float] = kwargs["dp_priors"]
+        logprobs = []
+        for var, partition_enum in self.partitions.items():
+            alpha = dp_priors[var]
 
-    def get_posterior(self, var_selection: list[int], **kwargs) -> Posterior:
+            for partition in partition_enum.enumerate():
+                # \Pr(B_{n}=B\mid \theta )
+                # = \frac {\Gamma (\theta )\,\theta ^{|B|}}{\Gamma (\theta +n)}}\prod _{b\in B}\Gamma (|b|)
+                logprobs.append(
+                    loggamma(alpha)
+                    - loggamma(alpha + partition_enum.n)
+                    + len(partition) * np.log(alpha)
+                    + sum(loggamma(b) for b in partition)
+                )
+
+        return cast(float, logsumexp(log_likelihood)), 0
+
+    def get_posterior(self, var_selection: list[int], **kwargs):
         raise NotImplementedError()
 
 
