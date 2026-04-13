@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
-from typing import Self, cast
+from typing import Self
 
 import numpy as np
 import scipy.linalg
@@ -286,7 +286,6 @@ class DirichletPartitionWeight(WeightType):
     def get_log_likelihood(self, **kwargs):
         if not self.partitions:
             return 0.0, 0
-        log_likelihood = 0
         dp_priors: dict[int, float] = kwargs["dp_priors"]
         logprobs = []
         for var, partition_enum in self.partitions.items():
@@ -302,7 +301,7 @@ class DirichletPartitionWeight(WeightType):
                     + sum(loggamma(b) for b in partition)
                 )
 
-        return cast(float, logsumexp(log_likelihood)), 0
+        return float(logsumexp(logprobs)), 0  # type: ignore
 
     def get_posterior(self, var_selection: list[int], **kwargs):
         raise NotImplementedError()
@@ -371,6 +370,8 @@ class ObservationWeights:
             return cls(beta_obs=weight)
         elif isinstance(weight, TruncatedGaussianWeight):
             return cls(truncated_gaussian_obs=weight)
+        elif isinstance(weight, DirichletPartitionWeight):
+            return cls(dirichlet_process_obs=weight)
         else:
             raise TypeError(f"Unrecognized weight type {type(weight)}")
 

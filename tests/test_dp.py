@@ -2,13 +2,11 @@ import numpy as np
 import pytest
 
 from kc import (
-    Affine,
     DirichletProcess,
     Draw,
-    Gaussian,
+    Equality,
     Let,
-    ObserveReal,
-    Sum,
+    Observe,
     Var,
     run_kc,
 )
@@ -18,7 +16,7 @@ from kc import (
 def test_dirichlet_process(alpha: float):
     expr = Let(
         "DP",
-        DirichletProcess(alpha, Gaussian(0, 1)),
+        DirichletProcess(alpha),
         Let(
             "x1",
             Draw(
@@ -37,13 +35,8 @@ def test_dirichlet_process(alpha: float):
                     Let(
                         "_",
                         # x1 and x2 are the same
-                        ObserveReal(Sum(Var("x1"), Affine(Var("x2"), -1)), 0.0),
-                        Let(
-                            "_",
-                            # x2 is equal to 1
-                            ObserveReal(Var("x2"), 1.0),
-                            Sum(Var("x1"), Var("x3")),
-                        ),
+                        Observe(Equality(Var("x1"), Var("x2"))),
+                        Equality(Var("x3"), Var("x1")),
                     ),
                 ),
             ),
@@ -51,59 +44,10 @@ def test_dirichlet_process(alpha: float):
     )
 
     posterior, Z = run_kc(expr)
-    assert isinstance(posterior, list), "Expected mixture posterior density"
-
-    p_new_draw = alpha / (alpha + 2)
     p_existing = 2 / (alpha + 2)
 
-    assert np.allclose(posterior[0].likelihood.log_likelihood, np.log(p_new_draw))
-    assert np.allclose(posterior[1].likelihood.log_likelihood, np.log(p_existing))
-
-    assert np.allclose(posterior[0].gaussian.mu, 1.0)
-    assert np.allclose(posterior[1].gaussian.mu, 2.0)
-
-    assert np.allclose(posterior[0].gaussian.cov, 1.0)
-    assert np.allclose(posterior[1].gaussian.cov, 0.0)
-
-
-@pytest.mark.parametrize("alpha", [0.1, 1, 4])
-def test_dirichlet_process_two_draw(alpha: float):
-    expr = Let(
-        "DP",
-        DirichletProcess(alpha, Gaussian(0, 1)),
-        Let(
-            "x1",
-            Draw(
-                Var("DP"),
-            ),
-            Let(
-                "x2",
-                Draw(
-                    Var("DP"),
-                ),
-                Let(
-                    "_",
-                    # x1 and x2 are the same
-                    ObserveReal(Sum(Var("x1"), Affine(Var("x2"), -1)), 0.0),
-                    Let(
-                        "_",
-                        # x2 is equal to 1
-                        ObserveReal(Var("x2"), 1.0),
-                        Sum(Var("x1"), Var("x2")),
-                    ),
-                ),
-            ),
-        ),
-    )
-
-    posterior, Z = run_kc(expr)
-    assert isinstance(posterior, list), "Expected mixture posterior density"
-
-    # We observe x1 == x2 == 1 so x1 + x2 should equal exactly 2
-    assert len(posterior) == 1, "Should only be a single element"
-    assert np.allclose(posterior[0].likelihood.log_likelihood, 0.0)
-    assert np.allclose(posterior[0].gaussian.mu, 2.0)
-    assert np.allclose(posterior[0].gaussian.cov, 0.0)
+    assert isinstance(posterior, float)
+    assert np.allclose(posterior, p_existing)
 
 
 if __name__ == "__main__":
