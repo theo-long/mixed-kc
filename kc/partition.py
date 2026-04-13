@@ -46,7 +46,7 @@ class PartitionEnumerator:
         new_partition._constraint_graph = self._constraint_graph.copy()
         return new_partition
 
-    def enumerate(self) -> Generator[Partition]:
+    def enumerate(self) -> Generator[Partition, None, None]:
         # This is an assignment of *groups* in the union find structure to partition indices
         # This is not an assignment of individual nodes to partition indices
         partition: list[list[int]] = []
@@ -61,7 +61,7 @@ class PartitionEnumerator:
 
     def _enumerate_recursive(
         self, groups_to_place: list[int], partition: list[list[int]]
-    ) -> Generator[Partition]:
+    ) -> Generator[Partition, None, None]:
         if not groups_to_place:
             yield Multiset(
                 sum(self._union_find.subset_size(group) for group in p)
