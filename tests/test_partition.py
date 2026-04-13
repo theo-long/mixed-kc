@@ -3,7 +3,7 @@ import itertools
 import pytest
 from multiset import Multiset
 
-from kc.partition import Equal, NotEqual, Partition
+from kc.partition import Equal, NotEqual, PartitionEnumerator
 
 
 def conditions():
@@ -20,7 +20,7 @@ def conditions():
 
 @pytest.mark.parametrize("n", range(1, 5))
 def test_partition_all_equal(n: int):
-    p = Partition()
+    p = PartitionEnumerator()
     for i in range(n):
         p.add_condition(Equal(i, i + 1))
 
@@ -29,7 +29,7 @@ def test_partition_all_equal(n: int):
 
 @pytest.mark.parametrize("n", range(2, 5))
 def test_partition_all_separate(n: int):
-    p = Partition()
+    p = PartitionEnumerator()
     for i, j in itertools.combinations(range(n), 2):
         p.add_condition(NotEqual(i, j))
 
@@ -46,7 +46,7 @@ def test_partition_mix():
         Equal(6, 7),
         Equal(7, 4),
     ]
-    p = Partition()
+    p = PartitionEnumerator()
     for condition in conditions:
         p.add_condition(condition)
 
@@ -71,7 +71,7 @@ def test_partition_mix():
 
 
 def test_partition_inconsistent_conditions():
-    p = Partition()
+    p = PartitionEnumerator()
     p.add_condition(Equal(1, 2))
     p.add_condition(Equal(2, 3))
     valid = p.add_condition(NotEqual(1, 3))
@@ -81,8 +81,8 @@ def test_partition_inconsistent_conditions():
 
 @pytest.mark.parametrize("conditions", conditions())
 def test_partition_condition_order_invariance(conditions: list[Equal | NotEqual]):
-    p1 = Partition()
-    p2 = Partition()
+    p1 = PartitionEnumerator()
+    p2 = PartitionEnumerator()
     for i in range(len(conditions)):
         p1.add_condition(conditions[i])
         p2.add_condition(conditions[len(conditions) - i - 1])
@@ -92,7 +92,7 @@ def test_partition_condition_order_invariance(conditions: list[Equal | NotEqual]
 
 @pytest.mark.parametrize("conditions", conditions())
 def test_partition_condition_redundancy(conditions: list[Equal | NotEqual]):
-    p1 = Partition()
+    p1 = PartitionEnumerator()
     for condition in conditions:
         p1.add_condition(condition)
         p1.add_condition(condition)
@@ -100,7 +100,7 @@ def test_partition_condition_redundancy(conditions: list[Equal | NotEqual]):
     for condition in conditions:
         p1.add_condition(condition)
 
-    p2 = Partition()
+    p2 = PartitionEnumerator()
     for condition in conditions:
         p2.add_condition(condition)
 
@@ -109,8 +109,8 @@ def test_partition_condition_redundancy(conditions: list[Equal | NotEqual]):
 
 @pytest.mark.parametrize("conditions", conditions())
 def test_partition_fst_snd_symmetric(conditions: list[Equal | NotEqual]):
-    p1 = Partition()
-    p2 = Partition()
+    p1 = PartitionEnumerator()
+    p2 = PartitionEnumerator()
     for condition in conditions:
         p1.add_condition(condition)
         new_condition = condition.__class__(condition.snd, condition.fst)
