@@ -26,7 +26,7 @@ class DirichletProcessDraw(SupportsEqualityComparison):
             max(self.draw_number, other.draw_number),
         )
         var_name = (
-            f"DP{self.process.var}{sorted_draw_numbers[0]}={sorted_draw_numbers[1]}"
+            f"DP{self.process.var}({sorted_draw_numbers[0]}={sorted_draw_numbers[1]})"
         )
         state.bdd.declare(var_name)
 
