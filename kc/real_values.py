@@ -73,8 +73,6 @@ class Gaussian(AExpr, DistributionWithDensity):
 
     def kc(self, env, state):
         var = state.next_variable(self)
-        # TODO - should we have this return a GaussianSum with a single variable?
-        # that way we don't need to handle wrapping/unwrapping GaussianVariables elsewhere
         return GaussianSum(
             frozenset([GaussianVariable(var, scale=self.std, shift=self.mean)])
         )

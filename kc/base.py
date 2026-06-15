@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, Self
+
+import dd.autoref as _bdd
 
 from kc.debugger import step_hook
 
@@ -54,3 +56,7 @@ class PExpr(ABC):
 
 class AExpr(PExpr):
     pass
+
+
+class SupportsEqualityComparison(Protocol):
+    def equals(self, other: Self, state: "KCState") -> _bdd._Ref: ...
